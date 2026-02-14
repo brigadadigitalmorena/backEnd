@@ -1,7 +1,8 @@
 """Survey response schemas."""
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
+from enum import Enum
 
 
 class QuestionAnswerCreate(BaseModel):
@@ -48,3 +49,72 @@ class SurveyResponseDetail(BaseModel):
     answers: List[QuestionAnswerResponse] = []
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class ValidationStatus(str, Enum):
+    """Response validation status."""
+    SUCCESS = "success"
+    PARTIAL = "partial"  # Some answers failed validation
+    FAILED = "failed"
+    DUPLICATE = "duplicate"
+
+
+class ResponseValidationResult(BaseModel):
+    """Validation result for a single response."""
+    client_id: str
+    status: ValidationStatus
+    response_id: Optional[int] = None  # Only set if success/partial
+    errors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)  # For low OCR confidence, etc.
+
+
+class BatchResponseCreate(BaseModel):
+    """Batch create multiple survey responses."""
+    responses: List[SurveyResponseCreate] = Field(..., min_length=1, max_length=50)
+
+
+class BatchResponseResult(BaseModel):
+    """Result of batch response submission."""
+    total: int
+    successful: int
+    failed: int
+    duplicates: int
+    results: List[ResponseValidationResult]
+
+
+class DocumentMetadata(BaseModel):
+    """Document metadata for OCR processing."""
+    document_type: str = Field(..., description="e.g., 'id_card', 'receipt', 'signature'")
+    question_id: Optional[int] = None
+    ocr_confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    ocr_text: Optional[str] = None
+    page_number: Optional[int] = None
+
+
+class DocumentUploadRequest(BaseModel):
+    """Document upload request."""
+    client_id: str = Field(..., description="Response client_id this document belongs to")
+    file_name: str
+    file_size: int
+    mime_type: str
+    metadata: DocumentMetadata
+
+
+class DocumentUploadResponse(BaseModel):
+    """Document upload response."""
+    document_id: str
+    upload_url: str  # Pre-signed URL for S3/Cloudinary
+    expires_at: datetime
+    ocr_required: bool = False
+    low_confidence_warning: bool = False
+
+
+class SyncStatus(BaseModel):
+    """Sync status for mobile app."""
+    user_id: int
+    pending_responses: int
+    synced_responses: int
+    pending_documents: int
+    last_sync: Optional[datetime] = None
+    assigned_surveys: int
+    available_updates: List[int] = Field(default_factory=list)  # Survey IDs with new versions

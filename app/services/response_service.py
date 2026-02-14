@@ -1,12 +1,17 @@
 """Survey response service."""
-from typing import List
+from typing import List, Dict
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.repositories.response_repository import ResponseRepository
 from app.repositories.survey_repository import SurveyRepository
 from app.models.response import SurveyResponse
-from app.schemas.response import SurveyResponseCreate
+from app.schemas.response import (
+    SurveyResponseCreate, 
+    BatchResponseResult, 
+    ResponseValidationResult,
+    ValidationStatus
+)
 
 
 class ResponseService:

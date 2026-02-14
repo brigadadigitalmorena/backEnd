@@ -87,3 +87,9 @@ class ResponseRepository:
         return self.db.query(SurveyResponse)\
             .filter(SurveyResponse.client_id == client_id)\
             .first() is not None
+    
+    def count_by_user(self, user_id: int) -> int:
+        """Count responses by user."""
+        return self.db.query(SurveyResponse)\
+            .filter(SurveyResponse.user_id == user_id)\
+            .count()

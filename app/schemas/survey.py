@@ -102,3 +102,17 @@ class SurveyListResponse(SurveyBase):
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class AssignedSurveyResponse(BaseModel):
+    """Assigned survey response for mobile app."""
+    assignment_id: int
+    survey_id: int
+    survey_title: str
+    survey_description: Optional[str] = None
+    assignment_status: str
+    assigned_location: Optional[str] = None
+    latest_version: SurveyVersionResponse
+    assigned_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
