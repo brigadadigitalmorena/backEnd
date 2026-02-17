@@ -9,7 +9,12 @@ from app.core.config import settings
 # Create engine
 engine = create_engine(
     settings.DATABASE_URL,
-    pool_pre_ping=True,
+    pool_pre_ping=True,          # Verify connections before use
+    pool_recycle=300,            # Recycle connections every 5 minutes
+    pool_timeout=30,             # Wait up to 30s for a connection from pool
+    connect_args={
+        "connect_timeout": 20,   # TCP connection timeout (Neon cold start)
+    },
     echo=settings.ENVIRONMENT == "development"
 )
 

@@ -1,6 +1,7 @@
 """Admin Whitelist and Activation Code Endpoints"""
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, Query, Request
+from datetime import datetime
+from fastapi import APIRouter, Depends, Query, Request, Body
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -14,9 +15,12 @@ from app.schemas.activation import (
     WhitelistListResponse,
     GenerateCodeRequest,
     GenerateCodeResponse,
+    ActivationCodeResponse,
     ActivationCodeListResponse,
     RevokeCodeRequest,
-    RevokeCodeResponse
+    RevokeCodeResponse,
+    AuditLogListResponse,
+    ActivationStatsResponse
 )
 
 router = APIRouter(prefix="/admin", tags=["Admin - Activation System"])
@@ -209,17 +213,19 @@ def list_activation_codes(
     current_user: AdminUser,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    status: Optional[str] = Query(None, regex="^(active|used|expired|locked)$"),
+    status: Optional[str] = Query(None, regex="^(all|active|used|expired|locked|revoked)$"),
     whitelist_id: Optional[int] = None,
     sort_by: str = Query("generated_at", regex="^(generated_at|expires_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$")
 ):
     """List activation codes with filtering (Admin only)"""
     service = ActivationCodeService(db)
+    # Convert "all" to None for the service layer
+    status_filter = None if status == "all" else status
     return service.list_activation_codes(
         page=page,
         limit=limit,
-        status_filter=status,
+        status_filter=status_filter,
         whitelist_id=whitelist_id,
         sort_by=sort_by,
         sort_order=sort_order
@@ -238,3 +244,83 @@ def revoke_activation_code(
     service = ActivationCodeService(db)
     client_ip = request.client.host if request.client else "unknown"
     return service.revoke_code(code_id, data, client_ip)
+
+
+@router.get("/activation-codes/{code_id}", response_model=ActivationCodeResponse)
+def get_activation_code(
+    code_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: AdminUser
+):
+    """Get activation code details (Admin only)"""
+    service = ActivationCodeService(db)
+    return service.get_activation_code(code_id)
+
+
+@router.post("/activation-codes/{code_id}/extend")
+def extend_activation_code(
+    code_id: int,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: AdminUser,
+    additional_hours: int = Body(..., embed=True, ge=1, le=720)
+):
+    """Extend activation code expiration (Admin only)"""
+    service = ActivationCodeService(db)
+    client_ip = request.client.host if request.client else "unknown"
+    return service.extend_code(code_id, additional_hours, client_ip)
+
+
+@router.post("/activation-codes/{code_id}/resend-email")
+async def resend_activation_email(
+    code_id: int,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: AdminUser,
+    custom_message: Optional[str] = Body(None, embed=True)
+):
+    """Resend activation email by regenerating code (Admin only)"""
+    service = ActivationCodeService(db)
+    client_ip = request.client.host if request.client else "unknown"
+    return await service.resend_email(code_id, client_ip, custom_message)
+
+
+@router.get("/activation-audit", response_model=AuditLogListResponse)
+def list_activation_audit_logs(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: AdminUser,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    event_type: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    success: Optional[bool] = None,
+    activation_code_id: Optional[int] = None,
+    whitelist_id: Optional[int] = None
+):
+    """List activation audit logs (Admin only)"""
+    service = ActivationCodeService(db)
+    parsed_from = datetime.fromisoformat(from_date) if from_date else None
+    parsed_to = datetime.fromisoformat(to_date) if to_date else None
+    return service.list_audit_logs(
+        page=page,
+        limit=limit,
+        from_date=parsed_from,
+        to_date=parsed_to,
+        event_type=event_type,
+        ip_address=ip_address,
+        success=success,
+        activation_code_id=activation_code_id,
+        whitelist_id=whitelist_id
+    )
+
+
+@router.get("/activation-audit/stats", response_model=ActivationStatsResponse)
+def activation_stats(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: AdminUser
+):
+    """Get activation system statistics (Admin only)"""
+    service = ActivationCodeService(db)
+    return service.get_stats()

@@ -9,14 +9,30 @@ from app.core.database import Base
 
 class QuestionType(str, Enum):
     """Question types supported by the system."""
+    # Text inputs
     TEXT = "text"
+    TEXTAREA = "textarea"
+    EMAIL = "email"
+    PHONE = "phone"
+    # Numeric
     NUMBER = "number"
+    SLIDER = "slider"
+    SCALE = "scale"
+    RATING = "rating"
+    # Choice
     SINGLE_CHOICE = "single_choice"
     MULTIPLE_CHOICE = "multiple_choice"
+    YES_NO = "yes_no"
+    # Date/Time
     DATE = "date"
+    TIME = "time"
+    DATETIME = "datetime"
+    # Media & special
     PHOTO = "photo"
+    FILE = "file"
     SIGNATURE = "signature"
     LOCATION = "location"
+    INE_OCR = "ine_ocr"
 
 
 class Survey(Base):

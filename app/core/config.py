@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:19006,http://localhost:3000"
@@ -26,6 +27,9 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     FROM_EMAIL: str = "noreply@psicologopuebla.com"
     FROM_NAME: str = "Brigada"
+    
+    # Neon API (for quota service)
+    NEON_API_KEY: str = ""
     
     # Environment
     ENVIRONMENT: str = "development"

@@ -23,7 +23,10 @@ from app.schemas.activation import (
     ValidateCodeResponse,
     ActivationRequirements,
     CompleteActivationRequest,
-    CompleteActivationResponse
+    CompleteActivationResponse,
+    AuditLogResponse,
+    AuditLogListResponse,
+    ActivationStatsResponse
 )
 from app.services.email_service import email_service
 from app.core.security import get_password_hash
@@ -155,7 +158,7 @@ class ActivationCodeService:
     ) -> ActivationCodeListResponse:
         """List activation codes with filtering"""
         query = self.db.query(ActivationCode).options(
-            joinedload(ActivationCode.whitelist_entry),
+            joinedload(ActivationCode.whitelist_entry).joinedload(UserWhitelist.assigned_supervisor),
             joinedload(ActivationCode.used_by_user),
             joinedload(ActivationCode.generator)
         )
@@ -181,7 +184,11 @@ class ActivationCodeService:
                     )
                 )
             elif status_filter == "locked":
-                query = query.filter(ActivationCode.activation_attempts >= 5)
+                query = query.filter(
+                    and_(ActivationCode.activation_attempts >= 5, ActivationCode.activation_attempts < 999)
+                )
+            elif status_filter == "revoked":
+                query = query.filter(ActivationCode.activation_attempts >= 999)
 
         if whitelist_id:
             query = query.filter(ActivationCode.whitelist_id == whitelist_id)
@@ -209,18 +216,26 @@ class ActivationCodeService:
         for code in codes:
             items.append(ActivationCodeResponse(
                 id=code.id,
+                code_hash=code.code_hash,
                 whitelist_id=code.whitelist_id,
                 whitelist_entry=WhitelistEntryInfo(
                     id=code.whitelist_entry.id,
                     identifier=code.whitelist_entry.identifier,
+                    identifier_type=code.whitelist_entry.identifier_type,
                     full_name=code.whitelist_entry.full_name,
-                    assigned_role=code.whitelist_entry.assigned_role
+                    assigned_role=code.whitelist_entry.assigned_role,
+                    supervisor_name=code.whitelist_entry.assigned_supervisor.full_name if code.whitelist_entry.assigned_supervisor else None,
+                    notes=code.whitelist_entry.notes
                 ),
                 status=code.status,
                 expires_at=code.expires_at,
                 is_used=code.is_used,
                 used_at=code.used_at,
                 used_by_user_name=code.used_by_user.full_name if code.used_by_user else None,
+                failed_attempts=min(code.activation_attempts, 5),
+                max_attempts=5,
+                revoked_at=None,
+                revoke_reason=None,
                 activation_attempts=code.activation_attempts,
                 last_attempt_at=code.last_attempt_at,
                 generated_at=code.generated_at,
@@ -247,6 +262,300 @@ class ActivationCodeService:
             }
         )
 
+    def get_activation_code(self, code_id: int) -> ActivationCodeResponse:
+        """Get single activation code details"""
+        code = self.db.query(ActivationCode).options(
+            joinedload(ActivationCode.whitelist_entry).joinedload(UserWhitelist.assigned_supervisor),
+            joinedload(ActivationCode.used_by_user),
+            joinedload(ActivationCode.generator)
+        ).filter(ActivationCode.id == code_id).first()
+
+        if not code:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Activation code {code_id} not found"
+            )
+
+        return ActivationCodeResponse(
+            id=code.id,
+            code_hash=code.code_hash,
+            whitelist_id=code.whitelist_id,
+            whitelist_entry=WhitelistEntryInfo(
+                id=code.whitelist_entry.id,
+                identifier=code.whitelist_entry.identifier,
+                identifier_type=code.whitelist_entry.identifier_type,
+                full_name=code.whitelist_entry.full_name,
+                assigned_role=code.whitelist_entry.assigned_role,
+                supervisor_name=code.whitelist_entry.assigned_supervisor.full_name if code.whitelist_entry.assigned_supervisor else None,
+                notes=code.whitelist_entry.notes
+            ),
+            status=code.status,
+            expires_at=code.expires_at,
+            is_used=code.is_used,
+            used_at=code.used_at,
+            used_by_user_name=code.used_by_user.full_name if code.used_by_user else None,
+            failed_attempts=min(code.activation_attempts, 5),
+            max_attempts=5,
+            revoked_at=None,
+            revoke_reason=None,
+            activation_attempts=code.activation_attempts,
+            last_attempt_at=code.last_attempt_at,
+            generated_at=code.generated_at,
+            generated_by_name=code.generator.full_name
+        )
+
+    def extend_code(self, code_id: int, additional_hours: int, ip_address: str) -> Dict[str, Any]:
+        """Extend activation code expiration"""
+        code = self.db.query(ActivationCode).filter(ActivationCode.id == code_id).first()
+        if not code:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Activation code {code_id} not found"
+            )
+
+        if code.is_used:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot extend a used activation code"
+            )
+
+        if additional_hours < 1 or additional_hours > 720:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="additional_hours must be between 1 and 720"
+            )
+
+        code.expires_at = code.expires_at + timedelta(hours=additional_hours)
+        self.db.commit()
+
+        audit_log = ActivationAuditLog(
+            event_type="code_extended",
+            activation_code_id=code.id,
+            whitelist_id=code.whitelist_id,
+            ip_address=ip_address,
+            success=True,
+            request_metadata={"additional_hours": additional_hours}
+        )
+        self.db.add(audit_log)
+        self.db.commit()
+
+        return {
+            "success": True,
+            "new_expires_at": code.expires_at.isoformat()
+        }
+
+    async def resend_email(self, code_id: int, ip_address: str, custom_message: Optional[str] = None) -> Dict[str, Any]:
+        """Regenerate and resend activation email for a whitelist entry"""
+        code = self.db.query(ActivationCode).options(
+            joinedload(ActivationCode.whitelist_entry)
+        ).filter(ActivationCode.id == code_id).first()
+
+        if not code:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Activation code {code_id} not found"
+            )
+
+        if code.is_used:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot resend email for a used activation code"
+            )
+
+        whitelist_entry = code.whitelist_entry
+        if whitelist_entry.identifier_type != "email":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Whitelist entry does not use email identifier"
+            )
+
+        # Revoke current code and generate a new one
+        code.activation_attempts = 999
+        self.db.commit()
+
+        plain_code = self.generate_activation_code()
+        code_hash = self.hash_activation_code(plain_code)
+        new_code = ActivationCode(
+            code_hash=code_hash,
+            whitelist_id=whitelist_entry.id,
+            expires_at=datetime.now() + timedelta(hours=72),
+            generated_by=code.generated_by
+        )
+        self.db.add(new_code)
+        self.db.commit()
+        self.db.refresh(new_code)
+
+        email_sent = False
+        email_status = None
+        try:
+            email_result = await email_service.send_activation_email(
+                to_email=whitelist_entry.identifier,
+                full_name=whitelist_entry.full_name,
+                activation_code=plain_code,
+                expires_in_hours=72,
+                custom_message=custom_message
+            )
+            email_sent = email_result["success"]
+            email_status = email_result.get("status", "sent")
+        except Exception as exc:
+            email_status = f"failed: {str(exc)}"
+
+        audit_log = ActivationAuditLog(
+            event_type="email_resent",
+            activation_code_id=new_code.id,
+            whitelist_id=whitelist_entry.id,
+            ip_address=ip_address,
+            success=email_sent,
+            request_metadata={"previous_code_id": code_id, "email_status": email_status}
+        )
+        self.db.add(audit_log)
+        self.db.commit()
+
+        return {
+            "success": True,
+            "email_sent": email_sent,
+            "code": plain_code,
+            "code_id": new_code.id,
+            "expires_at": new_code.expires_at.isoformat()
+        }
+
+    def list_audit_logs(
+        self,
+        page: int = 1,
+        limit: int = 50,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
+        event_type: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        success: Optional[bool] = None,
+        activation_code_id: Optional[int] = None,
+        whitelist_id: Optional[int] = None
+    ) -> AuditLogListResponse:
+        query = self.db.query(ActivationAuditLog).options(
+            joinedload(ActivationAuditLog.whitelist_entry),
+            joinedload(ActivationAuditLog.created_user)
+        )
+
+        if from_date:
+            query = query.filter(ActivationAuditLog.created_at >= from_date)
+        if to_date:
+            query = query.filter(ActivationAuditLog.created_at <= to_date)
+        if event_type and event_type != "all":
+            query = query.filter(ActivationAuditLog.event_type == event_type)
+        if ip_address:
+            query = query.filter(ActivationAuditLog.ip_address == ip_address)
+        if success is not None:
+            query = query.filter(ActivationAuditLog.success == success)
+        if activation_code_id:
+            query = query.filter(ActivationAuditLog.activation_code_id == activation_code_id)
+        if whitelist_id:
+            query = query.filter(ActivationAuditLog.whitelist_id == whitelist_id)
+
+        total_items = query.count()
+        offset = (page - 1) * limit
+        logs = query.order_by(ActivationAuditLog.created_at.desc()).offset(offset).limit(limit).all()
+
+        items: List[AuditLogResponse] = []
+        for log in logs:
+            items.append(AuditLogResponse(
+                id=log.id,
+                event_type=log.event_type,
+                activation_code_id=log.activation_code_id,
+                whitelist_id=log.whitelist_id,
+                whitelist_identifier=log.whitelist_entry.identifier if log.whitelist_entry else None,
+                whitelist_full_name=log.whitelist_entry.full_name if log.whitelist_entry else None,
+                identifier_attempted=log.identifier_attempted,
+                ip_address=log.ip_address,
+                user_agent=log.user_agent,
+                device_id=log.device_id,
+                success=log.success,
+                failure_reason=log.failure_reason,
+                created_user_id=log.created_user_id,
+                created_user_name=log.created_user.full_name if log.created_user else None,
+                request_metadata=log.request_metadata,
+                created_at=log.created_at
+            ))
+
+        total_pages = (total_items + limit - 1) // limit
+
+        return AuditLogListResponse(
+            items=items,
+            pagination={
+                "page": page,
+                "limit": limit,
+                "total_items": total_items,
+                "total_pages": total_pages
+            },
+            filters_applied={
+                "event_type": event_type or "all",
+                "from_date": from_date.isoformat() if from_date else None,
+                "to_date": to_date.isoformat() if to_date else None,
+                "ip_address": ip_address,
+                "success": success,
+                "activation_code_id": activation_code_id,
+                "whitelist_id": whitelist_id
+            }
+        )
+
+    def get_stats(self) -> ActivationStatsResponse:
+        now = datetime.now()
+        last_7_days = now - timedelta(days=7)
+        last_24_hours = now - timedelta(hours=24)
+
+        total_whitelist = self.db.query(UserWhitelist).count()
+        activated_users = self.db.query(UserWhitelist).filter(UserWhitelist.is_activated == True).count()
+        pending_activations = total_whitelist - activated_users
+        activation_rate = (activated_users / total_whitelist * 100) if total_whitelist else 0.0
+
+        total_codes = self.db.query(ActivationCode).count()
+        used_codes = self.db.query(ActivationCode).filter(ActivationCode.is_used == True).count()
+        expired_codes = self.db.query(ActivationCode).filter(
+            and_(ActivationCode.is_used == False, ActivationCode.expires_at <= now)
+        ).count()
+        locked_codes = self.db.query(ActivationCode).filter(
+            and_(ActivationCode.activation_attempts >= 5, ActivationCode.activation_attempts < 999)
+        ).count()
+        revoked_codes = self.db.query(ActivationCode).filter(ActivationCode.activation_attempts >= 999).count()
+        active_codes = max(total_codes - used_codes - expired_codes - locked_codes - revoked_codes, 0)
+
+        codes_generated_last_7 = self.db.query(ActivationCode).filter(
+            ActivationCode.generated_at >= last_7_days
+        ).count()
+        activations_last_7 = self.db.query(ActivationAuditLog).filter(
+            and_(ActivationAuditLog.event_type == "activation_success", ActivationAuditLog.created_at >= last_7_days)
+        ).count()
+        failed_attempts_24h = self.db.query(ActivationAuditLog).filter(
+            and_(ActivationAuditLog.success == False, ActivationAuditLog.created_at >= last_24_hours)
+        ).count()
+
+        failure_reasons = self.db.query(
+            ActivationAuditLog.failure_reason,
+            func.count(ActivationAuditLog.failure_reason)
+        ).filter(
+            ActivationAuditLog.failure_reason.isnot(None)
+        ).group_by(ActivationAuditLog.failure_reason).order_by(func.count(ActivationAuditLog.failure_reason).desc()).limit(5).all()
+
+        top_failure_reasons = [
+            {"reason": reason, "count": count}
+            for reason, count in failure_reasons
+        ]
+
+        return ActivationStatsResponse(
+            total_whitelist_entries=total_whitelist,
+            activated_users=activated_users,
+            pending_activations=pending_activations,
+            activation_rate=round(activation_rate, 2),
+            total_codes_generated=total_codes,
+            active_codes=active_codes,
+            used_codes=used_codes,
+            expired_codes=expired_codes,
+            locked_codes=locked_codes,
+            codes_generated_last_7_days=codes_generated_last_7,
+            activations_last_7_days=activations_last_7,
+            failed_attempts_last_24_hours=failed_attempts_24h,
+            top_failure_reasons=top_failure_reasons
+        )
+
     def revoke_code(
         self,
         code_id: int,
@@ -268,8 +577,8 @@ class ActivationCodeService:
                 detail="Cannot revoke code that has already been used"
             )
 
-        # Mark as locked (effectively revoked)
-        code.activation_attempts = 999  # Lock it
+        # Mark as revoked
+        code.activation_attempts = 999
         self.db.commit()
 
         # Log revocation

@@ -54,6 +54,7 @@ class ActivationAuditLog(Base):
             """
             event_type IN (
                 'code_generated',
+                'code_extended',
                 'code_validation_attempt',
                 'code_validation_success',
                 'activation_attempt',
@@ -62,6 +63,8 @@ class ActivationAuditLog(Base):
                 'code_expired',
                 'code_locked',
                 'code_revoked',
+                'email_sent',
+                'email_resent',
                 'rate_limit_exceeded'
             )
             """,

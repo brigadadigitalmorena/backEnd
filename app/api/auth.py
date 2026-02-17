@@ -1,13 +1,15 @@
 """Authentication router."""
 from typing import Annotated
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Body, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.services.auth_service import AuthService
 from app.schemas.user import LoginResponse, UserResponse
-from app.api.dependencies import get_current_user, AnyUser
+from app.core.security import decode_refresh_token, create_access_token
+from app.repositories.user_repository import UserRepository
+from app.api.dependencies import AnyUser
 from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -58,19 +60,30 @@ def get_current_user_info(current_user: AnyUser):
 
 
 @router.post("/refresh")
-def refresh_token(refresh_token: str):
+def refresh_token(
+    db: Annotated[Session, Depends(get_db)],
+    refresh_token: str = Body(..., embed=True)
+):
     """
     Refresh access token using refresh token.
-    
-    TODO: Implement refresh token logic:
-    - Validate refresh token
-    - Generate new access token
-    - Return new token
-    
-    For now, returns error as refresh tokens are not fully implemented.
     """
-    from fastapi import HTTPException, status
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Refresh token endpoint not yet implemented"
+    payload = decode_refresh_token(refresh_token)
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    repo = UserRepository(db)
+    user = repo.get_by_id(int(user_id))
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        )
+
+    access_token = create_access_token(
+        data={"sub": str(user.id), "role": user.role.value}
     )
+    return {"access_token": access_token}

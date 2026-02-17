@@ -72,11 +72,13 @@ class ActivationCode(Base):
     @property
     def is_locked(self) -> bool:
         """Check if code is locked (too many failed attempts)"""
-        return self.activation_attempts >= 5
+        return 5 <= self.activation_attempts < 999
 
     @property
     def status(self) -> str:
         """Get computed status of the code"""
+        if self.activation_attempts >= 999:
+            return "revoked"
         if self.is_used:
             return "used"
         if self.is_locked:

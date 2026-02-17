@@ -1,9 +1,9 @@
 """User service."""
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, generate_temporary_password
 from app.repositories.user_repository import UserRepository
 from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserUpdate
@@ -56,11 +56,24 @@ class UserService:
         
         return user
     
-    def get_users(self, skip: int = 0, limit: int = 100, 
-                  role: Optional[UserRole] = None, 
-                  is_active: Optional[bool] = None) -> List[User]:
+    def get_users(self, skip: int = 0, limit: int = 100,
+                  role: Optional[UserRole] = None,
+                  is_active: Optional[bool] = None,
+                  search: Optional[str] = None) -> List[User]:
         """Get list of users with optional filters."""
-        return self.user_repo.get_all(skip=skip, limit=limit, role=role, is_active=is_active)
+        return self.user_repo.get_all(
+            skip=skip,
+            limit=limit,
+            role=role,
+            is_active=is_active,
+            search=search
+        )
+
+    def count_users(self, role: Optional[UserRole] = None,
+                    is_active: Optional[bool] = None,
+                    search: Optional[str] = None) -> int:
+        """Count users with optional filters."""
+        return self.user_repo.count_all(role=role, is_active=is_active, search=search)
     
     def update_user(self, user_id: int, user_data: UserUpdate) -> User:
         """
@@ -102,3 +115,34 @@ class UserService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
+    
+    def reset_user_password(self, user_id: int) -> Tuple[User, str]:
+        """
+        Reset user password to a generated temporary password.
+        
+        Returns:
+            Tuple of (updated user, temporary password)
+        
+        Raises:
+            HTTPException: If user not found
+        """
+        user = self.user_repo.get_by_id(user_id)
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        temporary_password = generate_temporary_password()
+        hashed_password = get_password_hash(temporary_password)
+        
+        updated_user = self.user_repo.update(user_id, hashed_password=hashed_password)
+        
+        if not updated_user:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to reset password"
+            )
+        
+        return updated_user, temporary_password

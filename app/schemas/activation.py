@@ -28,6 +28,7 @@ class ActivationCodeStatus(str, Enum):
 class AuditEventType(str, Enum):
     """Type of audit event"""
     CODE_GENERATED = "code_generated"
+    CODE_EXTENDED = "code_extended"
     CODE_VALIDATION_ATTEMPT = "code_validation_attempt"
     CODE_VALIDATION_SUCCESS = "code_validation_success"
     ACTIVATION_ATTEMPT = "activation_attempt"
@@ -36,6 +37,8 @@ class AuditEventType(str, Enum):
     CODE_EXPIRED = "code_expired"
     CODE_LOCKED = "code_locked"
     CODE_REVOKED = "code_revoked"
+    EMAIL_SENT = "email_sent"
+    EMAIL_RESENT = "email_resent"
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
 
 
@@ -123,8 +126,11 @@ class WhitelistEntryInfo(BaseModel):
     """Whitelist entry information in code response"""
     id: int
     identifier: str
+    identifier_type: Optional[IdentifierType] = None
     full_name: str
     assigned_role: str
+    supervisor_name: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class GenerateCodeResponse(BaseModel):
@@ -141,6 +147,7 @@ class GenerateCodeResponse(BaseModel):
 class ActivationCodeResponse(BaseModel):
     """Activation code details (without plain code)"""
     id: int
+    code_hash: str
     whitelist_id: int
     whitelist_entry: WhitelistEntryInfo
     status: ActivationCodeStatus
@@ -148,6 +155,10 @@ class ActivationCodeResponse(BaseModel):
     is_used: bool
     used_at: Optional[datetime]
     used_by_user_name: Optional[str]
+    failed_attempts: int
+    max_attempts: int
+    revoked_at: Optional[datetime] = None
+    revoke_reason: Optional[str] = None
     activation_attempts: int
     last_attempt_at: Optional[datetime]
     generated_at: datetime

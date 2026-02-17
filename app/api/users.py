@@ -1,11 +1,11 @@
 """User router."""
 from typing import Annotated, List, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.services.user_service import UserService
-from app.schemas.user import UserCreate, UserUpdate, UserResponse
+from app.schemas.user import UserCreate, UserUpdate, UserResponse, PasswordResetResponse
 from app.models.user import UserRole
 from app.api.dependencies import AdminUser, AnyUser
 
@@ -37,16 +37,20 @@ def get_current_user_profile(current_user: AnyUser):
 def list_users(
     db: Annotated[Session, Depends(get_db)],
     current_user: AdminUser,
+    response: Response,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     role: Optional[UserRole] = None,
-    is_active: Optional[bool] = None
+    is_active: Optional[bool] = None,
+    search: Optional[str] = Query(None, max_length=255)
 ):
     """
     List all users with optional filters (Admin only).
     """
     service = UserService(db)
-    return service.get_users(skip=skip, limit=limit, role=role, is_active=is_active)
+    total = service.count_users(role=role, is_active=is_active, search=search)
+    response.headers["X-Total-Count"] = str(total)
+    return service.get_users(skip=skip, limit=limit, role=role, is_active=is_active, search=search)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
@@ -72,6 +76,11 @@ def update_user(
     """
     Update user (Admin only).
     """
+    if user_id == current_user.id and user_data.is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No puedes desactivar tu propia cuenta"
+        )
     service = UserService(db)
     return service.update_user(user_id, user_data)
 
@@ -105,3 +114,23 @@ def delete_user(
     """
     service = UserService(db)
     service.delete_user(user_id)
+
+
+@router.post("/{user_id}/reset-password", response_model=PasswordResetResponse)
+def reset_user_password(
+    user_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: AdminUser
+):
+    """
+    Reset user password to a generated temporary password (Admin only).
+    
+    Returns the temporary password that should be securely shared with the user.
+    """
+    service = UserService(db)
+    _, temporary_password = service.reset_user_password(user_id)
+    
+    return PasswordResetResponse(
+        message="Contrasena restablecida exitosamente",
+        temporary_password=temporary_password
+    )

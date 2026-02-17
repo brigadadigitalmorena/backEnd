@@ -77,3 +77,9 @@ class UserResponse(UserBase):
     updated_at: Optional[datetime] = None
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class PasswordResetResponse(BaseModel):
+    """Password reset response."""
+    message: str
+    temporary_password: str
