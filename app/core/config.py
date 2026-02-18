@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # CORS
-    ALLOWED_ORIGINS: str = "http://localhost:19006,http://localhost:3000"
+    ALLOWED_ORIGINS: str = "http://localhost:19006,http://localhost:3000,https://web-cms-murex.vercel.app"
     
     # Cloudinary
     CLOUDINARY_CLOUD_NAME: str = ""
