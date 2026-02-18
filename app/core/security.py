@@ -59,7 +59,7 @@ def create_refresh_token(data: Dict[str, Any], expires_delta: Optional[timedelta
     Create a JWT refresh token.
 
     Args:
-        data: Payload to encode (usually {"sub": user_id, "role": user_role})
+        data: Payload to encode. Include "ver" (token_version) for rotation support.
         expires_delta: Token expiration time
 
     Returns:

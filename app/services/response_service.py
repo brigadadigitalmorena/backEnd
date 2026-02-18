@@ -2,6 +2,7 @@
 from typing import List, Dict
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.repositories.response_repository import ResponseRepository
 from app.repositories.survey_repository import SurveyRepository
@@ -118,3 +119,66 @@ class ResponseService:
                              limit: int = 100) -> List[SurveyResponse]:
         """Get all responses for a specific version."""
         return self.response_repo.get_by_version(version_id, skip=skip, limit=limit)
+
+    def submit_batch_responses(
+        self, responses: List[SurveyResponseCreate], user_id: int
+    ) -> BatchResponseResult:
+        """
+        Submit multiple survey responses atomically with per-item savepoints.
+
+        Each response is protected by its own SAVEPOINT so a failure in one
+        item does not roll back the items that already succeeded.  The overall
+        transaction is committed once all items are processed.
+
+        Returns:
+            BatchResponseResult with per-item ValidationStatus and summary counts.
+        """
+        results: List[ResponseValidationResult] = []
+        synced = 0
+        failed_ids: List[str] = []
+
+        for i, response_data in enumerate(responses):
+            sp_name = f"sp_batch_{i}"
+            try:
+                self.db.execute(text(f"SAVEPOINT {sp_name}"))
+                # Reuse single-item logic
+                self.submit_response(response_data, user_id)
+                self.db.execute(text(f"RELEASE SAVEPOINT {sp_name}"))
+                results.append(
+                    ResponseValidationResult(
+                        client_id=response_data.client_id,
+                        status=ValidationStatus.SYNCED,
+                        message="Synced successfully",
+                    )
+                )
+                synced += 1
+            except HTTPException as exc:
+                self.db.execute(text(f"ROLLBACK TO SAVEPOINT {sp_name}"))
+                results.append(
+                    ResponseValidationResult(
+                        client_id=response_data.client_id,
+                        status=ValidationStatus.FAILED,
+                        message=exc.detail,
+                    )
+                )
+                failed_ids.append(response_data.client_id)
+            except Exception as exc:  # noqa: BLE001
+                self.db.execute(text(f"ROLLBACK TO SAVEPOINT {sp_name}"))
+                results.append(
+                    ResponseValidationResult(
+                        client_id=response_data.client_id,
+                        status=ValidationStatus.FAILED,
+                        message=str(exc),
+                    )
+                )
+                failed_ids.append(response_data.client_id)
+
+        # Commit all successful savepoints in one shot
+        self.db.commit()
+
+        return BatchResponseResult(
+            total=len(responses),
+            synced=synced,
+            failed=len(failed_ids),
+            results=results,
+        )

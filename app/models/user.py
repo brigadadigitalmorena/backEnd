@@ -27,6 +27,7 @@ class User(Base):
     avatar_url = Column(String, nullable=True)
     role = Column(SQLEnum(UserRole), nullable=False, default=UserRole.BRIGADISTA)
     is_active = Column(Boolean, default=True, nullable=False)
+    token_version = Column(Integer, default=1, nullable=False, server_default="1")  # Incremented on logout/refresh to invalidate old tokens
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

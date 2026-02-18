@@ -1,13 +1,15 @@
 """Authentication router."""
+from datetime import timedelta
 from typing import Annotated
 from fastapi import APIRouter, Depends, Body, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.services.auth_service import AuthService
 from app.schemas.user import LoginResponse, UserResponse
-from app.core.security import decode_refresh_token, create_access_token
+from app.core.security import decode_refresh_token, create_access_token, create_refresh_token
 from app.repositories.user_repository import UserRepository
 from app.api.dependencies import AnyUser
 from app.models.user import User
@@ -35,17 +37,17 @@ def login(
 
 
 @router.post("/logout")
-def logout(current_user: AnyUser):
+def logout(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: AnyUser
+):
     """
     Logout current user.
-    
-    In a stateless JWT system, logout is handled client-side by removing the token.
-    This endpoint exists for compatibility and could be extended to:
-    - Add token to blacklist
-    - Log logout event
-    - Clear server-side sessions
+    Increments token_version to invalidate all current refresh tokens.
     """
-    # TODO: Add token to blacklist if implementing token revocation
+    current_user.token_version = (current_user.token_version or 1) + 1
+    db.add(current_user)
+    db.commit()
     return {"message": "Successfully logged out"}
 
 
@@ -65,10 +67,13 @@ def refresh_token(
     refresh_token: str = Body(..., embed=True)
 ):
     """
-    Refresh access token using refresh token.
+    Refresh access token using refresh token (with token rotation).
+    
+    The old refresh token is invalidated after use — a new one is returned.
     """
     payload = decode_refresh_token(refresh_token)
     user_id = payload.get("sub")
+    token_ver = payload.get("ver")
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -83,7 +88,23 @@ def refresh_token(
             detail="User not found or inactive",
         )
 
+    # Token rotation: verify version matches, then increment
+    if token_ver is not None and token_ver != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token has been revoked",
+        )
+
+    # Increment version to invalidate this refresh token
+    user.token_version = (user.token_version or 1) + 1
+    db.add(user)
+    db.commit()
+
     access_token = create_access_token(
         data={"sub": str(user.id), "role": user.role.value}
     )
-    return {"access_token": access_token}
+    new_refresh_token = create_refresh_token(
+        data={"sub": str(user.id), "role": user.role.value, "ver": user.token_version},
+        expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    )
+    return {"access_token": access_token, "refresh_token": new_refresh_token}

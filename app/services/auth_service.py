@@ -62,7 +62,7 @@ class AuthService:
 
         refresh_token_expires = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
         refresh_token = create_refresh_token(
-            data={"sub": str(user.id), "role": user.role.value},
+            data={"sub": str(user.id), "role": user.role.value, "ver": user.token_version},
             expires_delta=refresh_token_expires
         )
         
