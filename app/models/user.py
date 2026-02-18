@@ -33,6 +33,7 @@ class User(Base):
     # Relationships
     assignments = relationship("Assignment", foreign_keys="Assignment.user_id", back_populates="user", cascade="all, delete-orphan")
     survey_responses = relationship("SurveyResponse", back_populates="user", cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     
     # Activation system relationships
     supervised_whitelist = relationship("UserWhitelist", foreign_keys="UserWhitelist.assigned_supervisor_id", back_populates="assigned_supervisor")

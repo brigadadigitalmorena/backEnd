@@ -22,7 +22,7 @@ from app.schemas.response import (
     DocumentUploadResponse,
     SyncStatus
 )
-from app.schemas.user import LoginResponse
+from app.schemas.user import LoginResponse, UserResponse
 from app.api.dependencies import BrigadistaUser, get_current_user
 from app.services.auth_service import AuthService
 from app.core.config import settings
@@ -67,11 +67,21 @@ def mobile_login(
     return token
 
 
+@router.get("/me", response_model=UserResponse)
+def get_my_profile(current_user: BrigadistaUser):
+    """
+    Get the authenticated user's profile.
+
+    Used by mobile app for the profile screen and to verify session validity.
+    """
+    return current_user
+
+
 @router.get("/surveys", response_model=List[AssignedSurveyResponse])
 def get_assigned_surveys(
     db: Annotated[Session, Depends(get_db)],
     current_user: BrigadistaUser,
-    status_filter: str = Query(None, description="Filter by assignment status: pending, in_progress, completed"),
+    status_filter: str = Query(None, description="Filter by assignment status: active, inactive"),
 ):
     """
     Get all surveys assigned to current user with latest published versions.
