@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.repositories.assignment_repository import AssignmentRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.survey_repository import SurveyRepository
+from app.repositories.notification_repository import NotificationRepository
 from app.models.assignment import Assignment, AssignmentStatus
 from app.models.user import UserRole
 from app.schemas.assignment import AssignmentCreate, AssignmentUpdate
@@ -19,6 +20,7 @@ class AssignmentService:
         self.assignment_repo = AssignmentRepository(db)
         self.user_repo = UserRepository(db)
         self.survey_repo = SurveyRepository(db)
+        self.notif_repo = NotificationRepository(db)
     
     def create_assignment(self, assignment_data: AssignmentCreate, 
                          assigned_by: int) -> Assignment:
@@ -68,12 +70,23 @@ class AssignmentService:
                 detail="User already assigned to this survey"
             )
         
-        return self.assignment_repo.create(
+        assignment = self.assignment_repo.create(
             user_id=assignment_data.user_id,
             survey_id=assignment_data.survey_id,
             assigned_by=assigned_by,
             location=assignment_data.location
         )
+
+        # Emit notification
+        brigadista_name = f"{user.nombre} {user.apellido}".strip() if (user.nombre or user.apellido) else user.email
+        self.notif_repo.create(
+            type="assignment_created",
+            title="Nueva asignación creada",
+            message=f'{brigadista_name} fue asignado/a a la encuesta "{survey.title}".',
+            action_url="/dashboard/assignments",
+        )
+
+        return assignment
     
     def get_assignment(self, assignment_id: int) -> Assignment:
         """

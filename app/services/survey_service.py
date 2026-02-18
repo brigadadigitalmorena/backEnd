@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.repositories.survey_repository import SurveyRepository
+from app.repositories.notification_repository import NotificationRepository
 from app.models.survey import Survey, SurveyVersion
 from app.schemas.survey import SurveyCreate, SurveyUpdate
 
@@ -14,6 +15,7 @@ class SurveyService:
     def __init__(self, db: Session):
         self.db = db
         self.survey_repo = SurveyRepository(db)
+        self.notif_repo = NotificationRepository(db)
     
     def create_survey(self, survey_data: SurveyCreate, created_by: int) -> Survey:
         """
@@ -56,7 +58,17 @@ class SurveyService:
                     )
         
         # Refresh to get all relationships
-        return self.survey_repo.get_by_id(survey.id)
+        result = self.survey_repo.get_by_id(survey.id)
+
+        # Emit notification
+        self.notif_repo.create(
+            type="survey_created",
+            title="Nueva encuesta creada",
+            message=f'Se creó la encuesta "{survey_data.title}" exitosamente.',
+            action_url="/dashboard/surveys",
+        )
+
+        return result
     
     def get_survey(self, survey_id: int) -> Survey:
         """
@@ -90,12 +102,25 @@ class SurveyService:
         survey = self.get_survey(survey_id)
         
         # Update basic fields
-        if survey_data.title or survey_data.description:
-            self.survey_repo.update(
-                survey_id=survey_id,
-                title=survey_data.title,
-                description=survey_data.description
-            )
+        kwargs: dict = {}
+        if survey_data.title is not None:
+            kwargs["title"] = survey_data.title
+        if survey_data.description is not None:
+            kwargs["description"] = survey_data.description
+        if survey_data.is_active is not None:
+            kwargs["is_active"] = survey_data.is_active
+        if survey_data.starts_at is not None:
+            kwargs["starts_at"] = survey_data.starts_at
+        if survey_data.ends_at is not None:
+            kwargs["ends_at"] = survey_data.ends_at
+        if survey_data.estimated_duration_minutes is not None:
+            kwargs["estimated_duration_minutes"] = survey_data.estimated_duration_minutes
+        if survey_data.max_responses is not None:
+            kwargs["max_responses"] = survey_data.max_responses
+        if survey_data.allow_anonymous is not None:
+            kwargs["allow_anonymous"] = survey_data.allow_anonymous
+        if kwargs:
+            self.survey_repo.update(survey_id=survey_id, **kwargs)
         
         # If questions are being updated, create new version
         if survey_data.questions:
@@ -137,13 +162,30 @@ class SurveyService:
         Raises:
             HTTPException: If survey not found
         """
+        # Fetch title before deleting for notification
+        survey = self.survey_repo.get_by_id(survey_id)
+        if not survey:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Survey not found"
+            )
+        survey_title = survey.title
+
         success = self.survey_repo.delete(survey_id)
-        
+
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Survey not found"
             )
+
+        # Emit notification
+        self.notif_repo.create(
+            type="survey_deleted",
+            title="Encuesta eliminada",
+            message=f'La encuesta "{survey_title}" fue eliminada.',
+            action_url="/dashboard/surveys",
+        )
     
     def publish_version(self, version_id: int) -> SurveyVersion:
         """
@@ -153,13 +195,23 @@ class SurveyService:
             HTTPException: If version not found
         """
         version = self.survey_repo.publish_version(version_id)
-        
+
         if not version:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Survey version not found"
             )
-        
+
+        # Emit notification
+        survey = self.survey_repo.get_by_id(version.survey_id, include_versions=False)
+        survey_title = survey.title if survey else "Encuesta"
+        self.notif_repo.create(
+            type="version_published",
+            title="Versión publicada",
+            message=f'La versión {version.version_number} de "{survey_title}" fue publicada.',
+            action_url="/dashboard/surveys",
+        )
+
         return version
     
     def get_latest_published_version(self, survey_id: int) -> SurveyVersion:

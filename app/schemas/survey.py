@@ -67,6 +67,11 @@ class SurveyBase(BaseModel):
     """Base survey schema."""
     title: str
     description: Optional[str] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    estimated_duration_minutes: Optional[int] = None
+    max_responses: Optional[int] = None
+    allow_anonymous: bool = False
 
 
 class SurveyCreate(SurveyBase):
@@ -78,6 +83,12 @@ class SurveyUpdate(BaseModel):
     """Update survey (creates new version)."""
     title: Optional[str] = None
     description: Optional[str] = None
+    is_active: Optional[bool] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    estimated_duration_minutes: Optional[int] = None
+    max_responses: Optional[int] = None
+    allow_anonymous: Optional[bool] = None
     questions: Optional[List[QuestionCreate]] = None
     change_summary: Optional[str] = None
 

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.services.survey_service import SurveyService
-from app.schemas.survey import SurveyCreate, SurveyUpdate, SurveyResponse, SurveyListResponse
+from app.schemas.survey import SurveyCreate, SurveyUpdate, SurveyResponse
 from app.api.dependencies import AdminUser
 
 router = APIRouter(prefix="/admin/surveys", tags=["Admin - Surveys"])
@@ -26,12 +26,12 @@ def create_survey(
     return service.create_survey(survey_data, current_user.id)
 
 
-@router.get("", response_model=List[SurveyListResponse])
+@router.get("", response_model=List[SurveyResponse])
 def list_surveys(
     db: Annotated[Session, Depends(get_db)],
     current_user: AdminUser,
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100),
+    limit: int = Query(100, ge=1, le=500),
     is_active: Optional[bool] = None
 ):
     """

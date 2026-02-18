@@ -37,15 +37,17 @@ class SurveyRepository:
         
         return query.filter(Survey.id == survey_id).first()
     
-    def get_all(self, skip: int = 0, limit: int = 100, 
+    def get_all(self, skip: int = 0, limit: int = 100,
                 is_active: Optional[bool] = None) -> List[Survey]:
-        """Get all surveys."""
-        query = self.db.query(Survey)
-        
+        """Get all surveys with version headers (no questions loaded)."""
+        query = self.db.query(Survey).options(
+            joinedload(Survey.versions)
+        )
+
         if is_active is not None:
             query = query.filter(Survey.is_active == is_active)
-        
-        return query.offset(skip).limit(limit).all()
+
+        return query.order_by(Survey.created_at.desc()).offset(skip).limit(limit).all()
     
     def update(self, survey_id: int, **kwargs) -> Optional[Survey]:
         """Update survey fields."""

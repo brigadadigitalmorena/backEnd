@@ -30,6 +30,16 @@ class AssignmentRepository:
         """Get assignment by ID."""
         return self.db.query(Assignment).filter(Assignment.id == assignment_id).first()
     
+    def get_all(self, status: Optional[AssignmentStatus] = None,
+                skip: int = 0, limit: int = 200) -> List[Assignment]:
+        """Get all assignments (admin view)."""
+        from sqlalchemy.orm import joinedload
+        query = self.db.query(Assignment)\
+            .options(joinedload(Assignment.user), joinedload(Assignment.survey))
+        if status is not None:
+            query = query.filter(Assignment.status == status)
+        return query.order_by(Assignment.created_at.desc()).offset(skip).limit(limit).all()
+
     def get_by_user(self, user_id: int, status: Optional[AssignmentStatus] = None,
                     skip: int = 0, limit: int = 100) -> List[Assignment]:
         """Get assignments for a user."""

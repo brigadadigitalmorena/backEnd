@@ -48,6 +48,11 @@ class Survey(Base):
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_by = Column(Integer, nullable=False)  # User ID of creator
+    starts_at = Column(DateTime(timezone=True), nullable=True)
+    ends_at = Column(DateTime(timezone=True), nullable=True)
+    estimated_duration_minutes = Column(Integer, nullable=True)  # approx fill time
+    max_responses = Column(Integer, nullable=True)              # response cap, None = unlimited
+    allow_anonymous = Column(Boolean, default=False, nullable=False)  # allow without brigadista assignment
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
