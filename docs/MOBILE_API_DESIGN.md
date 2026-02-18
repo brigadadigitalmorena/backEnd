@@ -48,11 +48,11 @@ Authorization: Bearer <jwt_token>
 
 ### Rate Limiting
 
-Recommended rate limits:
-- `/mobile/login`: 5 requests per minute per IP
-- `/mobile/responses/batch`: 10 requests per minute per user
-- `/mobile/documents/upload`: 20 requests per minute per user
-- Other endpoints: 30 requests per minute per user
+**Implemented with `slowapi`:**
+- `/mobile/login`: 5 requests per minute per IP ✅
+- `/mobile/responses/batch`: 10 requests per minute per user (planned)
+- `/mobile/documents/upload`: 20 requests per minute per user (planned)
+- Other endpoints: 30 requests per minute per user (planned)
 
 ## Endpoint: POST /mobile/login
 
@@ -128,7 +128,7 @@ Get all surveys assigned to the current user with their latest published version
 
 **Query Parameters:**
 - `status_filter` (optional): Filter by assignment status
-  - Values: `pending`, `in_progress`, `completed`
+  - Values: `active`, `inactive`
 
 **Headers:**
 ```
@@ -145,7 +145,7 @@ Authorization: Bearer <token>
     "survey_id": 1,
     "survey_title": "Customer Satisfaction Survey",
     "survey_description": "Evaluate customer experience",
-    "assignment_status": "pending",
+    "assignment_status": "active",
     "assigned_location": "Zone A",
     "latest_version": {
       "id": 1,

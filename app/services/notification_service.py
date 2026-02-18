@@ -67,11 +67,12 @@ class NotificationService:
         skip: int = 0,
         limit: int = 50,
         unread_only: bool = False,
+        user_id: Optional[int] = None,
     ) -> List[Notification]:
-        return self.repo.get_all(skip=skip, limit=limit, unread_only=unread_only)
+        return self.repo.get_all(skip=skip, limit=limit, unread_only=unread_only, user_id=user_id)
 
-    def get_unread_count(self) -> int:
-        return self.repo.get_unread_count()
+    def get_unread_count(self, user_id: Optional[int] = None) -> int:
+        return self.repo.get_unread_count(user_id=user_id)
 
     def mark_read(self, notification_id: int) -> Notification:
         notification = self.repo.mark_read(notification_id)

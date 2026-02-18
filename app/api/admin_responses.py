@@ -1,8 +1,9 @@
 """Response analytics router (Admin)."""
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from datetime import date
 
 from app.core.database import get_db
 from app.services.response_service import ResponseService
@@ -18,12 +19,15 @@ router = APIRouter(prefix="/admin/responses", tags=["Admin - Responses"])
 def get_responses_summary(
     db: Annotated[Session, Depends(get_db)],
     current_user: AdminOrEncargado,
+    date_from: Optional[date] = Query(None, description="Filter surveys by first response on or after this date (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="Filter surveys by last response on or before this date (YYYY-MM-DD)"),
 ):
     """
     Get per-survey response counts for the reports page.
     Returns each survey with total responses, version count, and last response date.
+    Optionally filter by date range (date_from / date_to).
     """
-    rows = (
+    query = (
         db.query(
             Survey.id.label("survey_id"),
             Survey.title.label("survey_title"),
@@ -33,6 +37,21 @@ def get_responses_summary(
         )
         .outerjoin(SurveyVersion, SurveyVersion.survey_id == Survey.id)
         .outerjoin(SurveyResponse, SurveyResponse.version_id == SurveyVersion.id)
+    )
+
+    if date_from:
+        query = query.filter(
+            (SurveyResponse.completed_at == None) |  # noqa: E711
+            (func.date(SurveyResponse.completed_at) >= date_from)
+        )
+    if date_to:
+        query = query.filter(
+            (SurveyResponse.completed_at == None) |  # noqa: E711
+            (func.date(SurveyResponse.completed_at) <= date_to)
+        )
+
+    rows = (
+        query
         .group_by(Survey.id, Survey.title, Survey.is_active)
         .order_by(func.count(SurveyResponse.id).desc())
         .all()

@@ -1,6 +1,6 @@
 """Mobile app routers for offline-first survey application."""
 from typing import Annotated, List
-from fastapi import APIRouter, Depends, Query, File, UploadFile, HTTPException, status
+from fastapi import APIRouter, Depends, Query, File, UploadFile, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import uuid
@@ -8,8 +8,10 @@ import cloudinary
 import cloudinary.utils
 
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.services.survey_service import SurveyService
 from app.services.response_service import ResponseService
+from app.services.notification_service import NotificationService
 from app.repositories.assignment_repository import AssignmentRepository
 from app.repositories.response_repository import ResponseRepository
 from app.schemas.survey import SurveyVersionResponse, AssignedSurveyResponse
@@ -22,6 +24,7 @@ from app.schemas.response import (
     DocumentUploadResponse,
     SyncStatus
 )
+from app.schemas.notification import NotificationResponse, NotificationListResponse, UnreadCountResponse
 from app.schemas.user import LoginResponse, UserResponse
 from app.api.dependencies import BrigadistaUser, get_current_user
 from app.services.auth_service import AuthService
@@ -31,7 +34,9 @@ router = APIRouter(prefix="/mobile", tags=["Mobile App - Offline First"])
 
 
 @router.post("/login", response_model=LoginResponse)
+@limiter.limit("5/minute")
 def mobile_login(
+    request: Request,
     email: str,
     password: str,
     db: Annotated[Session, Depends(get_db)],
@@ -504,3 +509,64 @@ def get_sync_status(
         assigned_surveys=assigned_surveys_count,
         available_updates=[]  # Requires version tracking logic
     )
+
+
+# ── Mobile Notifications ─────────────────────────────────────────────────────
+
+@router.get("/notifications", response_model=NotificationListResponse)
+def get_my_notifications(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: BrigadistaUser,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    unread_only: bool = Query(False),
+):
+    """
+    Get notifications addressed to the current user.
+
+    Returns both per-user notifications (user_id == current user)
+    and global notifications (user_id == None) if any exist.
+    """
+    service = NotificationService(db)
+    notifications = service.get_notifications(
+        skip=skip, limit=limit, unread_only=unread_only, user_id=current_user.id
+    )
+    unread_count = service.get_unread_count(user_id=current_user.id)
+    return NotificationListResponse(notifications=notifications, unread_count=unread_count)
+
+
+@router.get("/notifications/unread-count", response_model=UnreadCountResponse)
+def get_my_notification_unread_count(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: BrigadistaUser,
+):
+    """Get count of unread notifications for the current user (for badge display)."""
+    service = NotificationService(db)
+    return UnreadCountResponse(count=service.get_unread_count(user_id=current_user.id))
+
+
+@router.patch("/notifications/{notification_id}/read", response_model=NotificationResponse)
+def mark_my_notification_read(
+    notification_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: BrigadistaUser,
+):
+    """Mark a specific notification as read."""
+    service = NotificationService(db)
+    return service.mark_read(notification_id)
+
+
+@router.patch("/notifications/read-all", response_model=dict)
+def mark_all_my_notifications_read(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: BrigadistaUser,
+):
+    """Mark all of the current user's notifications as read."""
+    from app.models.notification import Notification
+    count = (
+        db.query(Notification)
+        .filter(Notification.user_id == current_user.id, Notification.read == False)  # noqa: E712
+        .update({"read": True})
+    )
+    db.commit()
+    return {"updated": count}

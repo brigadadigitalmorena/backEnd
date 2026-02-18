@@ -41,14 +41,14 @@ def get_admin_stats(
 
     completed_assignments = (
         db.query(func.count(Assignment.id))
-        .filter(Assignment.status == AssignmentStatus.COMPLETED.value)
+        .filter(Assignment.status == AssignmentStatus.INACTIVE.value)
         .scalar()
         or 0
     )
 
     pending_assignments = (
         db.query(func.count(Assignment.id))
-        .filter(Assignment.status == AssignmentStatus.PENDING.value)
+        .filter(Assignment.status == AssignmentStatus.ACTIVE.value)
         .scalar()
         or 0
     )
