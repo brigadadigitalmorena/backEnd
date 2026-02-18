@@ -60,8 +60,13 @@ class AssignmentService:
                 detail="Cannot assign inactive survey"
             )
 
-        # Check for duplicate — REMOVED: same user can be assigned same survey
-        # (they may fill it multiple times; responses are tracked in survey_responses)
+        # Prevent duplicate: one active assignment per user+survey is enough.
+        # Multiple responses are tracked in survey_responses, not in assignments.
+        if self.assignment_repo.exists(assignment_data.user_id, assignment_data.survey_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User already has an active assignment for this survey"
+            )
 
         assignment = self.assignment_repo.create(
             user_id=assignment_data.user_id,
