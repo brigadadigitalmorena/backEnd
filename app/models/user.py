@@ -30,6 +30,8 @@ class User(Base):
     token_version = Column(Integer, default=1, nullable=False, server_default="1")  # Incremented on logout/refresh to invalidate old tokens
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # Soft-delete: set by admin when removing a user; NULL means the account is live
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
     
     # Relationships
     assignments = relationship("Assignment", foreign_keys="Assignment.user_id", back_populates="user", cascade="all, delete-orphan")
@@ -43,6 +45,7 @@ class User(Base):
     used_activation_codes = relationship("ActivationCode", foreign_keys="ActivationCode.used_by_user_id", back_populates="used_by_user")
     generated_activation_codes = relationship("ActivationCode", foreign_keys="ActivationCode.generated_by", back_populates="generator")
     activation_audit_logs = relationship("ActivationAuditLog", foreign_keys="ActivationAuditLog.created_user_id", back_populates="created_user")
+    admin_audit_logs = relationship("AdminAuditLog", foreign_keys="AdminAuditLog.actor_id", back_populates="actor")
     
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, role={self.role})>"

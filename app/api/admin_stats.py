@@ -1,5 +1,5 @@
 """Admin statistics endpoint."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Annotated
@@ -18,16 +18,22 @@ router = APIRouter(prefix="/admin/stats", tags=["admin-stats"])
 def get_admin_stats(
     db: Annotated[Session, Depends(get_db)],
     current_user: AdminUser,
+    response: Response,
 ):
     """Return system-wide statistics for the admin dashboard."""
+    # Allow clients and CDN-edge to cache this for 60 s.
+    # "private" ensures proxies don't share it across users.
+    response.headers["Cache-Control"] = "private, max-age=60"
 
-    total_users = db.query(func.count(User.id)).scalar() or 0
+    # Exclude soft-deleted users from all counts
+    live_users = db.query(User).filter(User.deleted_at == None)  # noqa: E711
+
+    total_users = live_users.count()
 
     active_brigadistas = (
-        db.query(func.count(User.id))
+        live_users
         .filter(User.role == UserRole.BRIGADISTA.value, User.is_active == True)
-        .scalar()
-        or 0
+        .count()
     )
 
     active_surveys = (

@@ -9,6 +9,7 @@ from app.core.security import verify_password, get_password_hash
 from app.services.user_service import UserService
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, PasswordResetResponse
 from app.models.user import UserRole
+from app.models.admin_audit_log import AdminAuditLog
 from app.api.dependencies import AdminUser, AnyUser
 
 
@@ -96,7 +97,37 @@ def update_user(
             detail="No puedes desactivar tu propia cuenta"
         )
     service = UserService(db)
-    return service.update_user(user_id, user_data)
+    # Capture before-state for audit
+    old = service.get_user(user_id)
+    old_role = old.role
+    old_active = old.is_active
+
+    updated = service.update_user(user_id, user_data)
+
+    # Audit: role change
+    if user_data.role is not None and user_data.role != old_role:
+        db.add(AdminAuditLog(
+            actor_id=current_user.id,
+            action="user.role_change",
+            target_type="user",
+            target_id=user_id,
+            details={"before": old_role.value if hasattr(old_role, 'value') else str(old_role),
+                     "after": user_data.role.value if hasattr(user_data.role, 'value') else str(user_data.role)},
+        ))
+        db.commit()
+
+    # Audit: is_active toggle
+    if user_data.is_active is not None and user_data.is_active != old_active:
+        db.add(AdminAuditLog(
+            actor_id=current_user.id,
+            action="user.status_change",
+            target_type="user",
+            target_id=user_id,
+            details={"before": old_active, "after": user_data.is_active},
+        ))
+        db.commit()
+
+    return updated
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -125,9 +156,25 @@ def delete_user(
 ):
     """
     Soft delete user (Admin only).
+    Records an audit event before deletion so the record is preserved.
     """
     service = UserService(db)
+    # Capture data before soft-deletion for the audit log
+    user = service.get_user(user_id)  # raises 404 if not found
     service.delete_user(user_id)
+
+    db.add(AdminAuditLog(
+        actor_id=current_user.id,
+        action="user.delete",
+        target_type="user",
+        target_id=user_id,
+        details={
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+        },
+    ))
+    db.commit()
 
 
 @router.post("/{user_id}/reset-password", response_model=PasswordResetResponse)

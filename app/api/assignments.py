@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.services.assignment_service import AssignmentService
 from app.schemas.assignment import AssignmentCreate, AssignmentUpdate, AssignmentResponse, AssignmentDetailResponse
 from app.models.assignment import AssignmentStatus
+from app.models.admin_audit_log import AdminAuditLog
 from app.api.dependencies import AdminOrEncargado, BrigadistaUser
 
 router = APIRouter(prefix="/assignments", tags=["Assignments"])
@@ -122,5 +123,23 @@ def delete_assignment(
     """
     Delete assignment (Admin or Encargado).
     """
+    from app.repositories.assignment_repository import AssignmentRepository
+    repo = AssignmentRepository(db)
+    assignment = repo.get_by_id(assignment_id)  # capture before deletion
+
     service = AssignmentService(db)
     service.delete_assignment(assignment_id)
+
+    if assignment:
+        db.add(AdminAuditLog(
+            actor_id=current_user.id,
+            action="assignment.delete",
+            target_type="assignment",
+            target_id=assignment_id,
+            details={
+                "user_id": assignment.user_id,
+                "survey_id": assignment.survey_id,
+                "status": assignment.status.value if hasattr(assignment.status, 'value') else str(assignment.status),
+            },
+        ))
+        db.commit()

@@ -2,6 +2,7 @@
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.sql import func
 
 from app.models.user import User, UserRole
 
@@ -28,19 +29,27 @@ class UserRepository:
         return user
     
     def get_by_id(self, user_id: int) -> Optional[User]:
-        """Get user by ID."""
-        return self.db.query(User).filter(User.id == user_id).first()
+        """Get user by ID (excludes soft-deleted users)."""
+        return (
+            self.db.query(User)
+            .filter(User.id == user_id, User.deleted_at == None)  # noqa: E711
+            .first()
+        )
     
     def get_by_email(self, email: str) -> Optional[User]:
-        """Get user by email."""
-        return self.db.query(User).filter(User.email == email).first()
+        """Get user by email (excludes soft-deleted users)."""
+        return (
+            self.db.query(User)
+            .filter(User.email == email, User.deleted_at == None)  # noqa: E711
+            .first()
+        )
     
     def get_all(self, skip: int = 0, limit: int = 100,
                 role: Optional[UserRole] = None,
                 is_active: Optional[bool] = None,
                 search: Optional[str] = None) -> List[User]:
-        """Get all users with optional filtering."""
-        query = self.db.query(User)
+        """Get all non-deleted users with optional filtering."""
+        query = self.db.query(User).filter(User.deleted_at == None)  # noqa: E711
         
         if role is not None:
             query = query.filter(User.role == role)
@@ -63,8 +72,8 @@ class UserRepository:
     def count_all(self, role: Optional[UserRole] = None,
                   is_active: Optional[bool] = None,
                   search: Optional[str] = None) -> int:
-        """Count users with optional filtering."""
-        query = self.db.query(User)
+        """Count non-deleted users with optional filtering."""
+        query = self.db.query(User).filter(User.deleted_at == None)  # noqa: E711
 
         if role is not None:
             query = query.filter(User.role == role)
@@ -99,15 +108,20 @@ class UserRepository:
         return user
     
     def delete(self, user_id: int) -> bool:
-        """Soft delete user (set is_active to False)."""
+        """Soft-delete a user: stamp deleted_at and deactivate the account."""
         user = self.get_by_id(user_id)
         if not user:
             return False
         
+        user.deleted_at = func.now()
         user.is_active = False
         self.db.commit()
         return True
     
     def exists_by_email(self, email: str) -> bool:
-        """Check if user exists by email."""
-        return self.db.query(User).filter(User.email == email).first() is not None
+        """Check if a non-deleted user exists with this email."""
+        return (
+            self.db.query(User)
+            .filter(User.email == email, User.deleted_at == None)  # noqa: E711
+            .first() is not None
+        )

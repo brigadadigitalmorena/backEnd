@@ -6,6 +6,7 @@ from app.models.response import SurveyResponse, QuestionAnswer
 from app.models.whitelist import UserWhitelist
 from app.models.activation_code import ActivationCode
 from app.models.activation_audit_log import ActivationAuditLog
+from app.models.admin_audit_log import AdminAuditLog
 
 __all__ = [
     "User",
@@ -22,4 +23,5 @@ __all__ = [
     "UserWhitelist",
     "ActivationCode",
     "ActivationAuditLog",
+    "AdminAuditLog",
 ]
