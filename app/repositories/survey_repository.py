@@ -2,6 +2,7 @@
 from typing import Optional, List
 from sqlalchemy.orm import Session, joinedload, subqueryload
 from sqlalchemy import and_
+from sqlalchemy.sql import func
 
 from app.models.survey import Survey, SurveyVersion, Question, AnswerOption
 
@@ -25,7 +26,7 @@ class SurveyRepository:
         return survey
     
     def get_by_id(self, survey_id: int, include_versions: bool = True) -> Optional[Survey]:
-        """Get survey by ID with optional versions."""
+        """Get survey by ID with optional versions (excludes soft-deleted)."""
         query = self.db.query(Survey)
         
         if include_versions:
@@ -35,16 +36,19 @@ class SurveyRepository:
                 .joinedload(Question.options)
             )
         
-        return query.filter(Survey.id == survey_id).first()
+        return query.filter(
+            Survey.id == survey_id,
+            Survey.deleted_at == None,
+        ).first()
     
     def get_all(self, skip: int = 0, limit: int = 100,
                 is_active: Optional[bool] = None) -> List[Survey]:
-        """Get all surveys with versions, questions and options (no N+1)."""
+        """Get all surveys with versions, questions and options (no N+1, excludes soft-deleted)."""
         query = self.db.query(Survey).options(
             subqueryload(Survey.versions)
             .subqueryload(SurveyVersion.questions)
             .subqueryload(Question.options)
-        )
+        ).filter(Survey.deleted_at == None)
 
         if is_active is not None:
             query = query.filter(Survey.is_active == is_active)
@@ -66,12 +70,13 @@ class SurveyRepository:
         return survey
     
     def delete(self, survey_id: int) -> bool:
-        """Soft delete survey."""
+        """Soft delete survey (stamps deleted_at, sets is_active=False)."""
         survey = self.get_by_id(survey_id, include_versions=False)
         if not survey:
             return False
         
         survey.is_active = False
+        survey.deleted_at = func.now()
         self.db.commit()
         return True
     

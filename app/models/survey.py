@@ -55,6 +55,7 @@ class Survey(Base):
     allow_anonymous = Column(Boolean, default=False, nullable=False)  # allow without brigadista assignment
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
     
     # Relationships
     versions = relationship("SurveyVersion", back_populates="survey", cascade="all, delete-orphan")

@@ -40,6 +40,7 @@ class Assignment(Base):
     notes = Column(Text, nullable=True)         # Instructions from the encargado
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id], back_populates="assignments")
