@@ -1,6 +1,6 @@
 """Survey repository."""
 from typing import Optional, List
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, subqueryload
 from sqlalchemy import and_
 
 from app.models.survey import Survey, SurveyVersion, Question, AnswerOption
@@ -39,9 +39,11 @@ class SurveyRepository:
     
     def get_all(self, skip: int = 0, limit: int = 100,
                 is_active: Optional[bool] = None) -> List[Survey]:
-        """Get all surveys with version headers (no questions loaded)."""
+        """Get all surveys with versions, questions and options (no N+1)."""
         query = self.db.query(Survey).options(
-            joinedload(Survey.versions)
+            subqueryload(Survey.versions)
+            .subqueryload(SurveyVersion.questions)
+            .subqueryload(Question.options)
         )
 
         if is_active is not None:

@@ -2,12 +2,26 @@
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, Query, Response, HTTPException, status
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, field_validator
 
 from app.core.database import get_db
+from app.core.security import verify_password, get_password_hash
 from app.services.user_service import UserService
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, PasswordResetResponse
 from app.models.user import UserRole
 from app.api.dependencies import AdminUser, AnyUser
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("La contraseña debe tener al menos 8 caracteres")
+        return v
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -134,3 +148,26 @@ def reset_user_password(
         message="Contrasena restablecida exitosamente",
         temporary_password=temporary_password
     )
+
+
+@router.post("/me/change-password", status_code=200)
+def change_own_password(
+    payload: ChangePasswordRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: AnyUser,
+):
+    """
+    Change own password (any authenticated user).
+
+    Requires current password for verification.
+    """
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña actual es incorrecta",
+        )
+
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
+
+    return {"message": "Contraseña actualizada exitosamente"}

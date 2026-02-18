@@ -18,10 +18,20 @@ class Settings(BaseSettings):
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:19006,http://localhost:3000"
     
-    # Cloudinary (optional)
+    # Cloudinary
     CLOUDINARY_CLOUD_NAME: str = ""
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
+    CLOUDINARY_URL: str = ""
+
+    @property
+    def cloudinary_configured(self) -> bool:
+        """True when all three Cloudinary credentials are present."""
+        return bool(
+            self.CLOUDINARY_CLOUD_NAME
+            and self.CLOUDINARY_API_KEY
+            and self.CLOUDINARY_API_SECRET
+        )
     
     # Email (Resend)
     RESEND_API_KEY: str = ""

@@ -101,12 +101,18 @@ class DocumentUploadRequest(BaseModel):
 
 
 class DocumentUploadResponse(BaseModel):
-    """Document upload response."""
+    """Document upload response — includes Cloudinary signed-upload params."""
     document_id: str
-    upload_url: str  # Pre-signed URL for S3/Cloudinary
+    upload_url: str          # https://api.cloudinary.com/v1_1/<cloud>/image/upload
     expires_at: datetime
     ocr_required: bool = False
     low_confidence_warning: bool = False
+    # Signed upload params (mobile sends these directly to Cloudinary)
+    cloudinary_signature: Optional[str] = None
+    cloudinary_timestamp: Optional[int] = None
+    cloudinary_api_key: Optional[str] = None
+    cloudinary_public_id: Optional[str] = None
+    cloudinary_folder: Optional[str] = None
 
 
 class SyncStatus(BaseModel):

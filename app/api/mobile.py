@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Query, File, UploadFile, HTTPException, 
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import uuid
+import cloudinary
+import cloudinary.utils
 
 from app.core.database import get_db
 from app.services.survey_service import SurveyService
@@ -315,28 +317,69 @@ def upload_document(
     
     # Generate unique document ID
     document_id = f"doc_{uuid.uuid4().hex[:12]}"
-    
-    # Generate pre-signed URL for upload
-    # TODO: Implement actual cloud storage integration (S3/Cloudinary)
-    # For now, return mock URL
-    upload_url = f"{settings.CLOUDINARY_CLOUD_NAME or 'https://storage.example.com'}/upload/{document_id}"
     expires_at = datetime.utcnow() + timedelta(minutes=30)
-    
-    # TODO: Store document metadata in database
-    # DocumentRepository.create(
-    #     document_id=document_id,
-    #     user_id=current_user.id,
-    #     client_id=request.client_id,
-    #     file_name=request.file_name,
-    #     metadata=request.metadata.dict()
-    # )
-    
+
+    if not settings.cloudinary_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cloud storage not configured"
+        )
+
+    # Configure Cloudinary SDK with credentials from settings
+    cloudinary.config(
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
+        secure=True,
+    )
+
+    # Determine Cloudinary resource_type and folder from document type
+    doc_type = request.metadata.document_type if request.metadata else "photo"
+    folder_map = {
+        "id_card": "brigada/ine",
+        "photo": "brigada/photos",
+        "signature": "brigada/signatures",
+        "form": "brigada/forms",
+        "receipt": "brigada/receipts",
+    }
+    folder = folder_map.get(doc_type, "brigada/misc")
+    public_id = f"{folder}/{document_id}"
+
+    timestamp = int(datetime.utcnow().timestamp())
+    upload_params = {
+        "public_id": public_id,
+        "timestamp": timestamp,
+        "folder": folder,
+        "resource_type": "image" if request.mime_type.startswith("image/") else "raw",
+        "tags": [
+            f"user_{current_user.id}",
+            f"type_{doc_type}",
+            "brigada",
+        ],
+    }
+
+    # Generate Cloudinary signature
+    signature = cloudinary.utils.api_sign_request(
+        upload_params, settings.CLOUDINARY_API_SECRET
+    )
+
+    upload_url = (
+        f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}"
+        f"/{upload_params['resource_type']}/upload"
+    )
+
     return DocumentUploadResponse(
         document_id=document_id,
         upload_url=upload_url,
         expires_at=expires_at,
         ocr_required=ocr_required,
-        low_confidence_warning=low_confidence_warning
+        low_confidence_warning=low_confidence_warning,
+        # Extra signed params the mobile app needs for the direct upload
+        cloudinary_signature=signature,
+        cloudinary_timestamp=timestamp,
+        cloudinary_api_key=settings.CLOUDINARY_API_KEY,
+        cloudinary_public_id=public_id,
+        cloudinary_folder=folder,
     )
 
 
