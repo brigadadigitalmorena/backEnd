@@ -806,7 +806,7 @@ class ActivationCodeService:
 
         # Generate access token (you'll need to import from auth)
         from app.core.security import create_access_token
-        access_token = create_access_token(data={"sub": new_user.email})
+        access_token = create_access_token(data={"sub": str(new_user.id), "role": new_user.role.value})
 
         return CompleteActivationResponse(
             success=True,

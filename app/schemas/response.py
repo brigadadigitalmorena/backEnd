@@ -54,6 +54,7 @@ class SurveyResponseDetail(BaseModel):
 class ValidationStatus(str, Enum):
     """Response validation status."""
     SUCCESS = "success"
+    SYNCED = "synced"  # Successfully synced from mobile
     PARTIAL = "partial"  # Some answers failed validation
     FAILED = "failed"
     DUPLICATE = "duplicate"
@@ -64,6 +65,7 @@ class ResponseValidationResult(BaseModel):
     client_id: str
     status: ValidationStatus
     response_id: Optional[int] = None  # Only set if success/partial
+    message: Optional[str] = None  # Human-readable result description
     errors: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)  # For low OCR confidence, etc.
 

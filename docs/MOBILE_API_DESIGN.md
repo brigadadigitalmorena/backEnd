@@ -16,19 +16,25 @@ The mobile API is designed to support offline-first mobile applications that col
 ## Architecture Principles
 
 ### 1. Idempotency
+
 All write operations use client-generated IDs to ensure idempotency. Retrying a request with the same `client_id` returns the existing resource instead of creating duplicates.
 
 ### 2. Survey Immutability
+
 Surveys cannot be modified from the mobile app. Only the admin control plane can modify survey structures. Mobile app receives published survey versions as read-only data.
 
 ### 3. Batch Processing
+
 Mobile app can submit up to 50 responses in a single batch request. Each response is validated independently - failures don't affect other responses in the batch.
 
 ### 4. Validation Granularity
+
 Validation results are returned per-response with detailed error messages and warnings. This allows the mobile app to identify which responses succeeded and which need retry.
 
 ### 5. Two-Phase Document Upload
+
 Documents (photos, signatures, scanned forms) use a two-phase upload:
+
 1. Request pre-signed URL from API
 2. Upload file directly to cloud storage
 
@@ -49,6 +55,7 @@ Authorization: Bearer <jwt_token>
 ### Rate Limiting
 
 **Implemented with `slowapi`:**
+
 - `/mobile/login`: 5 requests per minute per IP ✅
 - `/mobile/responses/batch`: 10 requests per minute per user (planned)
 - `/mobile/documents/upload`: 20 requests per minute per user (planned)
@@ -57,15 +64,18 @@ Authorization: Bearer <jwt_token>
 ## Endpoint: POST /mobile/login
 
 ### Purpose
+
 Mobile-specific login endpoint with device tracking.
 
 ### Request
 
 **Query Parameters:**
+
 - `device_id` (required): Unique device identifier (UUID)
 - `app_version` (required): Mobile app version (e.g., "1.0.0")
 
 **Body:**
+
 ```json
 {
   "email": "brigadista@brigada.com",
@@ -76,6 +86,7 @@ Mobile-specific login endpoint with device tracking.
 ### Response
 
 **Success (200 OK):**
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -84,6 +95,7 @@ Mobile-specific login endpoint with device tracking.
 ```
 
 **Error (401 Unauthorized):**
+
 ```json
 {
   "detail": "Incorrect email or password"
@@ -122,15 +134,18 @@ async function login(email, password) {
 ## Endpoint: GET /mobile/surveys
 
 ### Purpose
+
 Get all surveys assigned to the current user with their latest published versions.
 
 ### Request
 
 **Query Parameters:**
+
 - `status_filter` (optional): Filter by assignment status
   - Values: `active`, `inactive`
 
 **Headers:**
+
 ```
 Authorization: Bearer <token>
 ```
@@ -138,6 +153,7 @@ Authorization: Bearer <token>
 ### Response
 
 **Success (200 OK):**
+
 ```json
 [
   {
@@ -209,17 +225,20 @@ async function fetchAssignedSurveys() {
 ## Endpoint: POST /mobile/responses/batch
 
 ### Purpose
+
 Submit multiple survey responses in one request for efficient offline sync.
 
 ### Request
 
 **Headers:**
+
 ```
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
 **Body:**
+
 ```json
 {
   "responses": [
@@ -262,6 +281,7 @@ Content-Type: application/json
 ### Response
 
 **Success (201 Created):**
+
 ```json
 {
   "total": 2,
@@ -290,20 +310,25 @@ Content-Type: application/json
 ### Validation Statuses
 
 #### SUCCESS
+
 Response was created successfully.
 
 #### DUPLICATE
+
 Response with this `client_id` already exists. Returns existing `response_id`.
 
 #### FAILED
+
 Response failed validation. Check `errors` array for details.
 
 Common errors:
+
 - "Survey version {id} not found"
 - "Survey version {id} is not published"
 - "Failed to submit response: {error}"
 
 #### PARTIAL
+
 Some answers failed validation but response was created. Check `warnings` array.
 
 ### OCR Confidence Warnings
@@ -386,17 +411,20 @@ async function syncPendingResponses() {
 ## Endpoint: POST /mobile/documents/upload
 
 ### Purpose
+
 Generate pre-signed URL for uploading documents (photos, signatures, scanned forms) with OCR validation.
 
 ### Request
 
 **Headers:**
+
 ```
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
 **Body:**
+
 ```json
 {
   "client_id": "550e8400-e29b-41d4-a716-446655440001",
@@ -416,6 +444,7 @@ Content-Type: application/json
 ### Response
 
 **Success (201 Created):**
+
 ```json
 {
   "document_id": "doc_a1b2c3d4e5f6",
@@ -427,6 +456,7 @@ Content-Type: application/json
 ```
 
 **Error (400 Bad Request):**
+
 ```json
 {
   "detail": "File size 15000000 exceeds maximum 10485760"
@@ -459,12 +489,14 @@ Content-Type: application/json
 ### Two-Phase Upload Process
 
 **Phase 1**: Request pre-signed URL (this endpoint)
+
 - Mobile app sends document metadata
 - Server validates and generates upload URL
 - Server checks OCR confidence
 - Returns pre-signed URL and document ID
 
 **Phase 2**: Upload file to cloud storage
+
 - Mobile app uploads directly to pre-signed URL
 - No file passes through API server
 - Reduces server load and bandwidth
@@ -529,11 +561,13 @@ async function uploadDocument(responseClientId, file, ocrResult) {
 ## Endpoint: GET /mobile/sync-status
 
 ### Purpose
+
 Get sync status and check for available survey updates.
 
 ### Request
 
 **Headers:**
+
 ```
 Authorization: Bearer <token>
 ```
@@ -541,6 +575,7 @@ Authorization: Bearer <token>
 ### Response
 
 **Success (200 OK):**
+
 ```json
 {
   "user_id": 3,
@@ -796,6 +831,7 @@ logger.info(
 ### Alerting
 
 Set up alerts for:
+
 - Sync success rate < 95%
 - OCR warning rate > 20%
 - Average API latency > 2s

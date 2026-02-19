@@ -105,9 +105,23 @@ class SurveyRepository:
             .first()
     
     def get_latest_version(self, survey_id: int) -> Optional[SurveyVersion]:
-        """Get latest version of a survey."""
+        """Get latest version of a survey (any status)."""
         return self.db.query(SurveyVersion)\
             .filter(SurveyVersion.survey_id == survey_id)\
+            .order_by(SurveyVersion.version_number.desc())\
+            .first()
+
+    def get_latest_published_version(self, survey_id: int) -> Optional[SurveyVersion]:
+        """Get latest PUBLISHED version of a survey."""
+        return self.db.query(SurveyVersion)\
+            .options(
+                joinedload(SurveyVersion.questions)
+                .joinedload(Question.options)
+            )\
+            .filter(
+                SurveyVersion.survey_id == survey_id,
+                SurveyVersion.is_published == True  # noqa: E712
+            )\
             .order_by(SurveyVersion.version_number.desc())\
             .first()
     

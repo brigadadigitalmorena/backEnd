@@ -120,6 +120,11 @@ class ResponseService:
         """Get all responses for a specific version."""
         return self.response_repo.get_by_version(version_id, skip=skip, limit=limit)
 
+    def get_sync_status(self, user_id: int) -> dict:
+        """Get sync status counters for a user."""
+        synced = len(self.response_repo.get_by_user(user_id, skip=0, limit=100000))
+        return {"synced_responses": synced}
+
     def submit_batch_responses(
         self, responses: List[SurveyResponseCreate], user_id: int
     ) -> BatchResponseResult:
@@ -140,6 +145,18 @@ class ResponseService:
         for i, response_data in enumerate(responses):
             sp_name = f"sp_batch_{i}"
             try:
+                # Check for duplicate before savepoint
+                if self.response_repo.exists_by_client_id(response_data.client_id):
+                    results.append(
+                        ResponseValidationResult(
+                            client_id=response_data.client_id,
+                            status=ValidationStatus.DUPLICATE,
+                            message="Response already synced (duplicate client_id)",
+                        )
+                    )
+                    synced += 1  # Duplicates count as successful
+                    continue
+
                 self.db.execute(text(f"SAVEPOINT {sp_name}"))
                 # Reuse single-item logic
                 self.submit_response(response_data, user_id)
@@ -176,9 +193,15 @@ class ResponseService:
         # Commit all successful savepoints in one shot
         self.db.commit()
 
+        # Count duplicates (items that were already in DB)
+        duplicates = sum(
+            1 for r in results if r.status == ValidationStatus.DUPLICATE
+        )
+
         return BatchResponseResult(
             total=len(responses),
-            synced=synced,
+            successful=synced,
             failed=len(failed_ids),
+            duplicates=duplicates,
             results=results,
         )

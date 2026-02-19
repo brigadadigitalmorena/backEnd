@@ -221,9 +221,9 @@ class SurveyService:
         Raises:
             HTTPException: If no published version found
         """
-        latest = self.survey_repo.get_latest_version(survey_id)
+        latest = self.survey_repo.get_latest_published_version(survey_id)
         
-        if not latest or not latest.is_published:
+        if not latest:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No published version available"

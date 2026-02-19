@@ -29,19 +29,25 @@ from app.schemas.user import LoginResponse, UserResponse
 from app.api.dependencies import BrigadistaUser, get_current_user
 from app.services.auth_service import AuthService
 from app.core.config import settings
+from pydantic import BaseModel as _BaseModel, EmailStr
 
 router = APIRouter(prefix="/mobile", tags=["Mobile App - Offline First"])
+
+
+class MobileLoginRequest(_BaseModel):
+    """Request body for mobile login."""
+    email: str
+    password: str
+    device_id: str
+    app_version: str
 
 
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit("5/minute")
 def mobile_login(
     request: Request,
-    email: str,
-    password: str,
+    body: MobileLoginRequest,
     db: Annotated[Session, Depends(get_db)],
-    device_id: str = Query(..., description="Unique device identifier"),
-    app_version: str = Query(..., description="Mobile app version")
 ):
     """
     Mobile-specific login endpoint.
@@ -55,19 +61,12 @@ def mobile_login(
     - App version for compatibility checks
     """
     auth_service = AuthService(db)
-    user = auth_service.authenticate_user(email, password)
     
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    token = auth_service.login(email, password)
+    # Single authenticate + token generation (no double bcrypt)
+    token = auth_service.login(body.email, body.password)
     
     # TODO: Store device info for sync tracking
-    # DeviceRepository.upsert(user_id=user.id, device_id=device_id, app_version=app_version)
+    # DeviceRepository.upsert(user_id=user.id, device_id=body.device_id, app_version=body.app_version)
     
     return token
 
@@ -551,7 +550,13 @@ def mark_my_notification_read(
     db: Annotated[Session, Depends(get_db)],
     current_user: BrigadistaUser,
 ):
-    """Mark a specific notification as read."""
+    """Mark a specific notification as read (only if owned by current user)."""
+    from app.models.notification import Notification
+    notification = db.query(Notification).filter(Notification.id == notification_id).first()
+    if not notification:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    if notification.user_id is not None and notification.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your notification")
     service = NotificationService(db)
     return service.mark_read(notification_id)
 
