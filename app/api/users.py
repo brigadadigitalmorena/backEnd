@@ -1,6 +1,6 @@
 """User router."""
 from typing import Annotated, List, Optional
-from fastapi import APIRouter, Depends, Query, Response, HTTPException, status
+from fastapi import APIRouter, Depends, Query, Response, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, field_validator
 
@@ -138,14 +138,77 @@ def update_own_profile(
 ):
     """
     Update own profile (any authenticated user).
-    
+
     Users cannot change their own role or is_active status.
     """
     # Remove sensitive fields that users shouldn't change themselves
-    update_data = user_data.model_dump(exclude_unset=True, exclude={'is_active'})
-    
+    update_data = user_data.model_dump(exclude_unset=True, exclude={'is_active', 'role'})
+
     service = UserService(db)
     return service.update_user(current_user.id, UserUpdate(**update_data))
+
+
+@router.post("/me/avatar", response_model=UserResponse)
+async def update_own_avatar(
+    file: Annotated[UploadFile, File(description="Profile photo (JPEG/PNG)")],
+    db: Annotated[Session, Depends(get_db)],
+    current_user: AnyUser,
+):
+    """
+    Upload and set the current user's profile photo.
+
+    Uploads the image to Cloudinary and saves the returned secure_url
+    to the user's avatar_url field.
+    Accepts JPEG or PNG files (max 5 MB).
+    """
+    import cloudinary
+    import cloudinary.uploader
+    from app.core.config import settings
+
+    if not settings.cloudinary_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El servicio de subida de imágenes no está disponible en este momento.",
+        )
+
+    # Validate content type
+    if file.content_type not in ("image/jpeg", "image/jpg", "image/png", "image/webp"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Formato no soportado. Use JPEG, PNG o WebP.",
+        )
+
+    # Read file (max 5 MB)
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La imagen no puede superar 5 MB.",
+        )
+
+    cloudinary.config(
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
+    )
+
+    try:
+        result = cloudinary.uploader.upload(
+            content,
+            folder="brigada/avatars",
+            public_id=f"user_{current_user.id}",
+            overwrite=True,
+            transformation=[{"width": 400, "height": 400, "crop": "fill", "gravity": "face"}],
+            resource_type="image",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Error al subir la imagen: {str(exc)}",
+        )
+
+    service = UserService(db)
+    return service.update_user(current_user.id, UserUpdate(avatar_url=result["secure_url"]))
 
 
 @router.delete("/{user_id}", status_code=204)
