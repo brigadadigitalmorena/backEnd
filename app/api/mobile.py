@@ -124,25 +124,26 @@ def get_assigned_surveys(
             )
     
     # Build response with survey details and latest versions
+    # Batch-fetch all published versions in ONE query (avoids N+1)
+    survey_ids = list({a.survey_id for a in assignments})
+    versions_map = survey_service.get_latest_published_versions_batch(survey_ids)
+
     result = []
     for assignment in assignments:
-        try:
-            # Get latest published version for each survey
-            latest_version = survey_service.get_latest_published_version(assignment.survey_id)
-            
-            result.append(AssignedSurveyResponse(
-                assignment_id=assignment.id,
-                survey_id=assignment.survey.id,
-                survey_title=assignment.survey.title,
-                survey_description=assignment.survey.description,
-                assignment_status=assignment.status.value,
-                assigned_location=assignment.location,
-                latest_version=latest_version,
-                assigned_at=assignment.created_at
-            ))
-        except HTTPException:
-            # Skip surveys without published versions
-            continue
+        latest_version = versions_map.get(assignment.survey_id)
+        if latest_version is None:
+            continue  # Skip surveys without published versions
+
+        result.append(AssignedSurveyResponse(
+            assignment_id=assignment.id,
+            survey_id=assignment.survey.id,
+            survey_title=assignment.survey.title,
+            survey_description=assignment.survey.description,
+            assignment_status=assignment.status.value,
+            assigned_location=assignment.location,
+            latest_version=latest_version,
+            assigned_at=assignment.created_at
+        ))
     
     return result
 

@@ -124,7 +124,48 @@ class SurveyRepository:
             )\
             .order_by(SurveyVersion.version_number.desc())\
             .first()
-    
+
+    def get_latest_published_versions_batch(self, survey_ids: List[int]) -> dict[int, SurveyVersion]:
+        """
+        Get latest PUBLISHED version for multiple surveys in a single query.
+        Returns a dict mapping survey_id -> SurveyVersion (avoids N+1).
+        """
+        if not survey_ids:
+            return {}
+
+        from sqlalchemy import func as sqla_func
+
+        # Subquery: max published version_number per survey
+        latest_sub = (
+            self.db.query(
+                SurveyVersion.survey_id,
+                sqla_func.max(SurveyVersion.version_number).label("max_vn"),
+            )
+            .filter(
+                SurveyVersion.survey_id.in_(survey_ids),
+                SurveyVersion.is_published == True,  # noqa: E712
+            )
+            .group_by(SurveyVersion.survey_id)
+            .subquery()
+        )
+
+        versions = (
+            self.db.query(SurveyVersion)
+            .options(
+                joinedload(SurveyVersion.questions).joinedload(Question.options)
+            )
+            .join(
+                latest_sub,
+                and_(
+                    SurveyVersion.survey_id == latest_sub.c.survey_id,
+                    SurveyVersion.version_number == latest_sub.c.max_vn,
+                ),
+            )
+            .all()
+        )
+
+        return {v.survey_id: v for v in versions}
+
     def publish_version(self, version_id: int) -> Optional[SurveyVersion]:
         """Publish a survey version."""
         version = self.get_version_by_id(version_id)

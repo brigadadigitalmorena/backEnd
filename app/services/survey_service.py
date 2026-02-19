@@ -230,3 +230,7 @@ class SurveyService:
             )
         
         return latest
+
+    def get_latest_published_versions_batch(self, survey_ids: list[int]) -> dict[int, SurveyVersion]:
+        """Get latest published versions for multiple surveys in one query."""
+        return self.survey_repo.get_latest_published_versions_batch(survey_ids)

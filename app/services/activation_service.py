@@ -609,15 +609,18 @@ class ActivationCodeService:
         Validate activation code (public endpoint).
         Returns whitelist info if valid, generic error if not.
         """
-        # Find code by hash
+        # Find code by hash — only scan active candidates (unexpired, unlocked)
+        now = datetime.now()
         codes = self.db.query(ActivationCode).options(
             joinedload(ActivationCode.whitelist_entry),
             joinedload(ActivationCode.whitelist_entry, UserWhitelist.assigned_supervisor)
         ).filter(
-            ActivationCode.is_used == False
+            ActivationCode.is_used == False,
+            ActivationCode.expires_at > now,
+            ActivationCode.activation_attempts < 5,
         ).all()
 
-        # Check each code hash
+        # Check each code hash (bcrypt comparison)
         matching_code = None
         for code in codes:
             if self.verify_activation_code(data.code, code.code_hash):
@@ -630,8 +633,8 @@ class ActivationCodeService:
             activation_code_id=matching_code.id if matching_code else None,
             whitelist_id=matching_code.whitelist_id if matching_code else None,
             ip_address=ip_address,
-            success=matching_code is not None and not matching_code.is_expired and not matching_code.is_locked,
-            failure_reason="invalid_code" if not matching_code else ("expired" if matching_code.is_expired else ("locked" if matching_code.is_locked else None))
+            success=matching_code is not None,
+            failure_reason="invalid_code" if not matching_code else None
         )
         self.db.add(audit_log)
         self.db.commit()
@@ -695,11 +698,14 @@ class ActivationCodeService:
         Complete user activation.
         Creates user account and marks code as used.
         """
-        # Find and validate code (similar to validate_code)
+        # Find and validate code — only scan active candidates (unexpired, unlocked)
+        now = datetime.now()
         codes = self.db.query(ActivationCode).options(
             joinedload(ActivationCode.whitelist_entry)
         ).filter(
-            ActivationCode.is_used == False
+            ActivationCode.is_used == False,
+            ActivationCode.expires_at > now,
+            ActivationCode.activation_attempts < 5,
         ).all()
 
         matching_code = None

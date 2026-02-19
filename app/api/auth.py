@@ -1,7 +1,7 @@
 """Authentication router."""
 from datetime import timedelta
 from typing import Annotated
-from fastapi import APIRouter, Depends, Body, HTTPException, status
+from fastapi import APIRouter, Depends, Body, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -13,12 +13,15 @@ from app.core.security import decode_refresh_token, create_access_token, create_
 from app.repositories.user_repository import UserRepository
 from app.api.dependencies import AnyUser
 from app.models.user import User
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/login", response_model=LoginResponse)
+@limiter.limit("10/minute")
 def login(
+    request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[Session, Depends(get_db)]
 ):
@@ -62,7 +65,9 @@ def get_current_user_info(current_user: AnyUser):
 
 
 @router.post("/refresh")
+@limiter.limit("10/minute")
 def refresh_token(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     refresh_token: str = Body(..., embed=True)
 ):
