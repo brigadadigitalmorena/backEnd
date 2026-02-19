@@ -78,6 +78,24 @@ class AssignmentRepository:
         
         return query.offset(skip).limit(limit).all()
     
+    def get_by_assigner(self, assigned_by_id: int, status: Optional[AssignmentStatus] = None,
+                       skip: int = 0, limit: int = 200) -> List[Assignment]:
+        """Get assignments created by a specific encargado (excludes soft-deleted)."""
+        from sqlalchemy.orm import joinedload
+        query = self.db.query(Assignment)\
+            .options(
+                joinedload(Assignment.user),
+                joinedload(Assignment.survey),
+                joinedload(Assignment.assigned_by_user),
+            )\
+            .filter(
+                Assignment.assigned_by == assigned_by_id,
+                Assignment.deleted_at == None,
+            )
+        if status is not None:
+            query = query.filter(Assignment.status == status)
+        return query.order_by(Assignment.created_at.desc()).offset(skip).limit(limit).all()
+
     def get_by_survey(self, survey_id: int, status: Optional[AssignmentStatus] = None,
                      skip: int = 0, limit: int = 100) -> List[Assignment]:
         """Get assignments for a survey (excludes soft-deleted)."""
