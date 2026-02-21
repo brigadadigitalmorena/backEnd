@@ -53,9 +53,9 @@ jobs:
 
             echo "▶ Waiting for service to come up..."
             sleep 3
-            sudo systemctl is-active --quiet "$SERVICE" \
+            systemctl is-active --quiet "$SERVICE" \
               && echo "✅ $SERVICE is running" \
-              || (echo "❌ $SERVICE failed to start" && sudo journalctl -u "$SERVICE" -n 30 --no-pager && exit 1)
+              || (echo "❌ $SERVICE failed to start" && journalctl -u "$SERVICE" -n 30 --no-pager && exit 1)
 
       - name: Notify success
         if: success()
