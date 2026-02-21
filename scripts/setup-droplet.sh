@@ -37,7 +37,6 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "▶ Installing system packages..."
 apt-get update -qq
 apt-get install -y -qq \
-  python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python3-pip \
   nginx certbot python3-certbot-nginx \
   git curl ufw fail2ban
 
@@ -58,13 +57,7 @@ else
   echo "▶ Swap already configured, skipping."
 fi
 
-# ── 3. Create app user ──────────────────────────────────────────────────────
-if ! id "$APP_USER" &>/dev/null; then
-  echo "▶ Creating user $APP_USER..."
-  useradd --system --shell /bin/bash --home "$APP_DIR" --create-home "$APP_USER"
-fi
-
-# ── 4. Clone repo ───────────────────────────────────────────────────────────
+# ── 3. Clone repo ───────────────────────────────────────────────────────────
 if [[ ! -d "$APP_DIR/.git" ]]; then
   echo "▶ Cloning repository..."
   git clone "$REPO_URL" "$APP_DIR"
@@ -74,14 +67,14 @@ else
   cd "$APP_DIR" && git pull origin main
 fi
 
-# ── 5. Python venv + deps ───────────────────────────────────────────────────
+# ── 4. Python venv + deps ───────────────────────────────────────────────────
 echo "▶ Creating Python venv..."
 cd "$APP_DIR"
 sudo -u "$APP_USER" python${PYTHON_VERSION} -m venv venv
 sudo -u "$APP_USER" venv/bin/pip install --quiet --upgrade pip
 sudo -u "$APP_USER" venv/bin/pip install --quiet -r requirements.txt
 
-# ── 6. .env file ────────────────────────────────────────────────────────────
+# ── 5. .env file ────────────────────────────────────────────────────────────
 if [[ ! -f "$APP_DIR/.env" ]]; then
   echo "▶ Creating .env from template..."
   cat > "$APP_DIR/.env" << 'EOF'
@@ -105,7 +98,7 @@ EOF
   echo "   Run: nano $APP_DIR/.env"
 fi
 
-# ── 7. systemd service ──────────────────────────────────────────────────────
+# ── 6. systemd service ──────────────────────────────────────────────────────
 echo "▶ Installing systemd service..."
 cp "$APP_DIR/scripts/brigada-backend.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 # Allow brigada user to restart its own service without password
@@ -115,13 +108,13 @@ chmod 440 "/etc/sudoers.d/${APP_USER}-service"
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 
-# ── 8. Firewall ─────────────────────────────────────────────────────────────
+# ── 7. Firewall ─────────────────────────────────────────────────────────────
 echo "▶ Configuring UFW firewall..."
 ufw allow OpenSSH
 ufw allow "Nginx Full"
 ufw --force enable
 
-# ── 9. SSH deploy key for GitHub Actions ────────────────────────────────────
+# ── 8. SSH deploy key for GitHub Actions ────────────────────────────────────
 DEPLOY_KEY="$APP_DIR/.ssh/deploy_key"
 if [[ ! -f "$DEPLOY_KEY" ]]; then
   echo "▶ Generating deploy SSH key..."
