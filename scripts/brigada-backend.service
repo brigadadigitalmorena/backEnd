@@ -1,0 +1,31 @@
+[Unit]
+Description=Brigada Backend API (FastAPI/uvicorn)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=brigada
+Group=brigada
+WorkingDirectory=/opt/brigada-backend
+EnvironmentFile=/opt/brigada-backend/.env
+ExecStart=/opt/brigada-backend/venv/bin/uvicorn app.main:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --workers 2 \
+    --log-level info \
+    --proxy-headers \
+    --forwarded-allow-ips="*"
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=brigada-backend
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

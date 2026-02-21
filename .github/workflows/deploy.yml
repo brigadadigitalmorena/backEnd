@@ -1,0 +1,68 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_migrations:
+        description: "Skip alembic migrations"
+        required: false
+        default: "false"
+        type: boolean
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT || 22 }}
+          script_stop: true  # abort on first error
+          script: |
+            set -euo pipefail
+
+            APP_DIR="${{ secrets.APP_DIR || '/opt/brigada-backend' }}"
+            SERVICE="brigada-backend"
+
+            echo "▶ Pulling latest code..."
+            cd "$APP_DIR"
+            git fetch --all
+            git reset --hard origin/main
+
+            echo "▶ Installing dependencies..."
+            source venv/bin/activate
+            pip install -r requirements.txt --quiet --no-cache-dir
+
+            if [ "${{ github.event.inputs.skip_migrations || 'false' }}" != "true" ]; then
+              echo "▶ Running Alembic migrations..."
+              alembic upgrade head
+            else
+              echo "⏭ Skipping migrations (manual override)"
+            fi
+
+            echo "▶ Restarting service..."
+            sudo systemctl restart "$SERVICE"
+
+            echo "▶ Waiting for service to come up..."
+            sleep 3
+            sudo systemctl is-active --quiet "$SERVICE" \
+              && echo "✅ $SERVICE is running" \
+              || (echo "❌ $SERVICE failed to start" && sudo journalctl -u "$SERVICE" -n 30 --no-pager && exit 1)
+
+      - name: Notify success
+        if: success()
+        run: |
+          echo "✅ Deploy completed — commit ${{ github.sha }} deployed to production"
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "❌ Deploy FAILED — commit ${{ github.sha }}"
