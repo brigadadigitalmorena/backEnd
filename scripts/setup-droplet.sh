@@ -4,7 +4,7 @@
 # droplet (Ubuntu 22.04 / 24.04).
 #
 # Run as root:
-#   curl -fsSL https://raw.githubusercontent.com/<org>/brigadaBackEnd/main/scripts/setup-droplet.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/brigadadigitalmorena/backEnd/main/scripts/setup-droplet.sh | bash
 # or:
 #   bash scripts/setup-droplet.sh
 # =============================================================================
