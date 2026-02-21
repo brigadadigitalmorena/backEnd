@@ -1,7 +1,11 @@
 """Activation Code Service"""
 import secrets
 import bcrypt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+def _now() -> datetime:
+    """Current UTC time, timezone-aware. Use everywhere instead of datetime.now()."""
+    return datetime.now(timezone.utc)
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, func, or_
@@ -90,7 +94,7 @@ class ActivationCodeService:
         code_hash = self.hash_activation_code(plain_code)
 
         # Calculate expiration
-        expires_at = datetime.now() + timedelta(hours=data.expires_in_hours)
+        expires_at = _now() + timedelta(hours=data.expires_in_hours)
 
         # Create activation code
         activation_code = ActivationCode(
@@ -165,7 +169,7 @@ class ActivationCodeService:
 
         # Apply filters
         if status_filter:
-            now = datetime.now()
+            now = _now()
             if status_filter == "active":
                 query = query.filter(
                     and_(
@@ -378,7 +382,7 @@ class ActivationCodeService:
         new_code = ActivationCode(
             code_hash=code_hash,
             whitelist_id=whitelist_entry.id,
-            expires_at=datetime.now() + timedelta(hours=72),
+            expires_at=_now() + timedelta(hours=72),
             generated_by=code.generated_by
         )
         self.db.add(new_code)
@@ -498,7 +502,7 @@ class ActivationCodeService:
         )
 
     def get_stats(self) -> ActivationStatsResponse:
-        now = datetime.now()
+        now = _now()
         last_7_days = now - timedelta(days=7)
         last_24_hours = now - timedelta(hours=24)
 
@@ -597,7 +601,7 @@ class ActivationCodeService:
             success=True,
             message="Activation code revoked successfully",
             code_id=code_id,
-            revoked_at=datetime.now()
+            revoked_at=_now()
         )
 
     def validate_code(
@@ -615,7 +619,7 @@ class ActivationCodeService:
                    the code exists but is expired or locked, so we can return a
                    specific, actionable error message.
         """
-        now = datetime.now()
+        now = _now()
 
         # ── Phase 1: active candidates only ──────────────────────────────────
         active_codes = self.db.query(ActivationCode).options(
@@ -715,7 +719,7 @@ class ActivationCodeService:
         Creates user account and marks code as used.
         """
         # Find and validate code — only scan active candidates (unexpired, unlocked)
-        now = datetime.now()
+        now = _now()
         codes = self.db.query(ActivationCode).options(
             joinedload(ActivationCode.whitelist_entry)
         ).filter(
@@ -756,7 +760,7 @@ class ActivationCodeService:
         if whitelist.identifier.lower() != data.identifier.lower():
             # Increment attempts to rate-limit brute-force of emails against a stolen code
             matching_code.activation_attempts += 1
-            matching_code.last_attempt_at = datetime.now()
+            matching_code.last_attempt_at = _now()
             matching_code.last_attempt_ip = ip_address
 
             audit_log = ActivationAuditLog(
@@ -805,12 +809,12 @@ class ActivationCodeService:
 
         # Mark code as used
         matching_code.is_used = True
-        matching_code.used_at = datetime.now()
+        matching_code.used_at = _now()
         matching_code.used_by_user_id = new_user.id
 
         # Mark whitelist as activated
         whitelist.is_activated = True
-        whitelist.activated_at = datetime.now()
+        whitelist.activated_at = _now()
         whitelist.activated_user_id = new_user.id
 
         self.db.commit()
