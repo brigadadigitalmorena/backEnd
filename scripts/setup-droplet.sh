@@ -42,13 +42,30 @@ apt-get install -y -qq \
   nginx certbot python3-certbot-nginx \
   git curl ufw fail2ban
 
-# ── 2. Create app user ──────────────────────────────────────────────────────
+# ── 2. Swap (critical on 1 GB droplet) ────────────────────────────────────
+if ! swapon --show | grep -q /swapfile; then
+  echo "▶ Creating 1 GB swapfile (essential on 1 GB RAM droplet)..."
+  fallocate -l 1G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  # Reduce swappiness — only use swap under real memory pressure
+  echo 'vm.swappiness=10' >> /etc/sysctl.conf
+  echo 'vm.vfs_cache_pressure=50' >> /etc/sysctl.conf
+  sysctl -p
+  echo "   Swap enabled: $(swapon --show)"
+else
+  echo "▶ Swap already configured, skipping."
+fi
+
+# ── 3. Create app user ──────────────────────────────────────────────────────
 if ! id "$APP_USER" &>/dev/null; then
   echo "▶ Creating user $APP_USER..."
   useradd --system --shell /bin/bash --home "$APP_DIR" --create-home "$APP_USER"
 fi
 
-# ── 3. Clone repo ───────────────────────────────────────────────────────────
+# ── 4. Clone repo ───────────────────────────────────────────────────────────
 if [[ ! -d "$APP_DIR/.git" ]]; then
   echo "▶ Cloning repository..."
   git clone "$REPO_URL" "$APP_DIR"
@@ -58,14 +75,14 @@ else
   cd "$APP_DIR" && git pull origin main
 fi
 
-# ── 4. Python venv + deps ───────────────────────────────────────────────────
+# ── 5. Python venv + deps ───────────────────────────────────────────────────
 echo "▶ Creating Python venv..."
 cd "$APP_DIR"
 sudo -u "$APP_USER" python${PYTHON_VERSION} -m venv venv
 sudo -u "$APP_USER" venv/bin/pip install --quiet --upgrade pip
 sudo -u "$APP_USER" venv/bin/pip install --quiet -r requirements.txt
 
-# ── 5. .env file ────────────────────────────────────────────────────────────
+# ── 6. .env file ────────────────────────────────────────────────────────────
 if [[ ! -f "$APP_DIR/.env" ]]; then
   echo "▶ Creating .env from template..."
   cat > "$APP_DIR/.env" << 'EOF'
@@ -89,8 +106,18 @@ EOF
   echo "   Run: nano $APP_DIR/.env"
 fi
 
-# ── 6. PostgreSQL DB ────────────────────────────────────────────────────────
-echo "▶ Setting up PostgreSQL..."
+# ── 7. PostgreSQL DB ────────────────────────────────────────────────────────
+echo "▶ Tuning PostgreSQL for 1 GB RAM..."
+PG_CONF=$(sudo -u postgres psql -t -c "SHOW config_file;" | xargs)
+cat >> "$PG_CONF" << 'PGEOF'
+# Tuning for 1 GB RAM droplet
+shared_buffers = 128MB
+work_mem = 4MB
+maintenance_work_mem = 32MB
+effective_cache_size = 384MB
+max_connections = 20
+PGEOF
+systemctl restart postgresql
 PSQL="sudo -u postgres psql -c"
 $PSQL "SELECT 1 FROM pg_roles WHERE rolname='brigada'" | grep -q 1 \
   || $PSQL "CREATE USER brigada WITH PASSWORD 'CHANGE_ME';"
@@ -98,7 +125,7 @@ $PSQL "SELECT 1 FROM pg_database WHERE datname='brigada'" | grep -q 1 \
   || $PSQL "CREATE DATABASE brigada OWNER brigada;"
 echo "   ⚠️  Remember to update the DB password in .env and PostgreSQL!"
 
-# ── 7. systemd service ──────────────────────────────────────────────────────
+# ── 8. systemd service ──────────────────────────────────────────────────────
 echo "▶ Installing systemd service..."
 cp "$APP_DIR/scripts/brigada-backend.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 # Allow brigada user to restart its own service without password
@@ -108,13 +135,13 @@ chmod 440 "/etc/sudoers.d/${APP_USER}-service"
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 
-# ── 8. Firewall ─────────────────────────────────────────────────────────────
+# ── 9. Firewall ─────────────────────────────────────────────────────────────
 echo "▶ Configuring UFW firewall..."
 ufw allow OpenSSH
 ufw allow "Nginx Full"
 ufw --force enable
 
-# ── 9. SSH deploy key for GitHub Actions ───────────────────────────────────
+# ── 10. SSH deploy key for GitHub Actions ───────────────────────────────────
 DEPLOY_KEY="$APP_DIR/.ssh/deploy_key"
 if [[ ! -f "$DEPLOY_KEY" ]]; then
   echo "▶ Generating deploy SSH key..."

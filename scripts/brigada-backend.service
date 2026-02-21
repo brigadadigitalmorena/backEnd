@@ -12,16 +12,27 @@ EnvironmentFile=/opt/brigada-backend/.env
 ExecStart=/opt/brigada-backend/venv/bin/uvicorn app.main:app \
     --host 0.0.0.0 \
     --port 8000 \
-    --workers 2 \
-    --log-level info \
+    --workers 1 \
+    --log-level warning \
     --proxy-headers \
-    --forwarded-allow-ips="*"
+    --forwarded-allow-ips="*" \
+    --timeout-keep-alive 30 \
+    --limit-concurrency 50 \
+    --backlog 64
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=brigada-backend
+
+# Memory guard — kills the process before the OOM killer does
+# Leaves ~350 MB for OS + PostgreSQL on a 1 GB droplet
+MemoryMax=400M
+MemorySwapMax=200M
+
+# CPU — prevent runaway processes from starving the whole machine
+CPUQuota=80%
 
 # Security hardening
 NoNewPrivileges=true
