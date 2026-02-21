@@ -607,17 +607,17 @@ class ActivationCodeService:
     ) -> ValidateCodeResponse:
         """
         Validate activation code (public endpoint).
-        Returns whitelist info if valid, generic error if not.
+        Queries ALL non-used codes (no attempt/expiry filter) so we can return
+        specific, actionable error messages (expired vs locked vs not-found).
+        The attempt filter is enforced in complete_activation for security.
         """
-        # Find code by hash — only scan active candidates (unexpired, unlocked)
-        now = datetime.now()
+        # Scan all non-used codes — do NOT pre-filter by expiry/attempts here
+        # so we can return a specific reason if the code is found but unusable.
         codes = self.db.query(ActivationCode).options(
             joinedload(ActivationCode.whitelist_entry),
             joinedload(ActivationCode.whitelist_entry, UserWhitelist.assigned_supervisor)
         ).filter(
             ActivationCode.is_used == False,
-            ActivationCode.expires_at > now,
-            ActivationCode.activation_attempts < 5,
         ).all()
 
         # Check each code hash (bcrypt comparison)
@@ -627,14 +627,23 @@ class ActivationCodeService:
                 matching_code = code
                 break
 
+        # Determine failure reason for audit log
+        failure_reason = None
+        if not matching_code:
+            failure_reason = "invalid_code"
+        elif matching_code.is_expired:
+            failure_reason = "expired_code"
+        elif matching_code.is_locked:
+            failure_reason = "locked_code"
+
         # Log validation attempt
         audit_log = ActivationAuditLog(
             event_type="code_validation_attempt",
             activation_code_id=matching_code.id if matching_code else None,
             whitelist_id=matching_code.whitelist_id if matching_code else None,
             ip_address=ip_address,
-            success=matching_code is not None,
-            failure_reason="invalid_code" if not matching_code else None
+            success=(matching_code is not None and failure_reason is None),
+            failure_reason=failure_reason
         )
         self.db.add(audit_log)
         self.db.commit()
@@ -642,32 +651,30 @@ class ActivationCodeService:
         if not matching_code:
             return ValidateCodeResponse(
                 valid=False,
-                error="Invalid activation code"
+                error="Activation code not found"
             )
 
-        # NOTE: do NOT increment activation_attempts for validate — that counter
-        # is only incremented on complete_activation failures (identifier mismatch)
-        # so that brute-forcing emails against a stolen code is rate-limited.
-        # Incrementing here would lock out a legitimate user who navigates back
-        # and re-validates the same code more than 5 times.
+        # NOTE: validate never increments activation_attempts — that counter is
+        # only incremented on identifier mismatch in complete_activation to
+        # rate-limit brute-forcing email addresses against a stolen code.
 
-        # Check if expired
+        # Return specific messages so the user (and admin) know what to do next.
         if matching_code.is_expired:
             return ValidateCodeResponse(
                 valid=False,
-                error="Activation code has expired"
+                error="Activation code expired"
             )
 
-        # Check if locked
         if matching_code.is_locked:
             return ValidateCodeResponse(
                 valid=False,
-                error="Activation code is locked due to too many attempts"
+                error="Activation code locked"
             )
 
         # Code is valid - return whitelist info
         whitelist = matching_code.whitelist_entry
-        remaining_hours = (matching_code.expires_at - datetime.now()).total_seconds() / 3600
+        now = datetime.now()
+        remaining_hours = (matching_code.expires_at - now).total_seconds() / 3600
 
         return ValidateCodeResponse(
             valid=True,
