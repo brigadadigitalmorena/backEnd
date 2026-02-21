@@ -2,10 +2,6 @@
 import secrets
 import bcrypt
 from datetime import datetime, timedelta, timezone
-
-def _now() -> datetime:
-    """Current UTC time, timezone-aware. Use everywhere instead of datetime.now()."""
-    return datetime.now(timezone.utc)
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, func, or_
@@ -34,6 +30,11 @@ from app.schemas.activation import (
 )
 from app.services.email_service import email_service
 from app.core.security import get_password_hash
+
+
+def _now() -> datetime:
+    """Current UTC time, timezone-aware. Use everywhere instead of datetime.now()."""
+    return datetime.now(timezone.utc)
 
 
 class ActivationCodeService:
