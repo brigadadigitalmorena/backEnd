@@ -5,8 +5,8 @@ Wants=postgresql.service
 
 [Service]
 Type=simple
-User=brigada
-Group=brigada
+User=polo
+Group=polo
 WorkingDirectory=/opt/brigada-backend
 EnvironmentFile=/opt/brigada-backend/.env
 ExecStart=/opt/brigada-backend/venv/bin/uvicorn app.main:app \

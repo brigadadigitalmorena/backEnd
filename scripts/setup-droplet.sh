@@ -11,7 +11,7 @@
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────────
-APP_USER="brigada"
+APP_USER="polo"
 APP_DIR="/opt/brigada-backend"
 REPO_URL="${REPO_URL:-}"           # set via env or prompted below
 PYTHON_VERSION="3.11"
@@ -38,7 +38,6 @@ echo "▶ Installing system packages..."
 apt-get update -qq
 apt-get install -y -qq \
   python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python3-pip \
-  postgresql postgresql-contrib \
   nginx certbot python3-certbot-nginx \
   git curl ufw fail2ban
 
@@ -87,7 +86,7 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
   echo "▶ Creating .env from template..."
   cat > "$APP_DIR/.env" << 'EOF'
 # ── Fill in all values before starting the service ──────────────────────────
-DATABASE_URL=postgresql://brigada:CHANGE_ME@localhost:5432/brigada
+DATABASE_URL=postgresql://brigada:<password>@<host>.neon.tech/brigada?sslmode=require
 SECRET_KEY=CHANGE_ME_use_openssl_rand_hex_32
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -106,26 +105,7 @@ EOF
   echo "   Run: nano $APP_DIR/.env"
 fi
 
-# ── 7. PostgreSQL DB ────────────────────────────────────────────────────────
-echo "▶ Tuning PostgreSQL for 1 GB RAM..."
-PG_CONF=$(sudo -u postgres psql -t -c "SHOW config_file;" | xargs)
-cat >> "$PG_CONF" << 'PGEOF'
-# Tuning for 1 GB RAM droplet
-shared_buffers = 128MB
-work_mem = 4MB
-maintenance_work_mem = 32MB
-effective_cache_size = 384MB
-max_connections = 20
-PGEOF
-systemctl restart postgresql
-PSQL="sudo -u postgres psql -c"
-$PSQL "SELECT 1 FROM pg_roles WHERE rolname='brigada'" | grep -q 1 \
-  || $PSQL "CREATE USER brigada WITH PASSWORD 'CHANGE_ME';"
-$PSQL "SELECT 1 FROM pg_database WHERE datname='brigada'" | grep -q 1 \
-  || $PSQL "CREATE DATABASE brigada OWNER brigada;"
-echo "   ⚠️  Remember to update the DB password in .env and PostgreSQL!"
-
-# ── 8. systemd service ──────────────────────────────────────────────────────
+# ── 7. systemd service ──────────────────────────────────────────────────────
 echo "▶ Installing systemd service..."
 cp "$APP_DIR/scripts/brigada-backend.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 # Allow brigada user to restart its own service without password
@@ -135,13 +115,13 @@ chmod 440 "/etc/sudoers.d/${APP_USER}-service"
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 
-# ── 9. Firewall ─────────────────────────────────────────────────────────────
+# ── 8. Firewall ─────────────────────────────────────────────────────────────
 echo "▶ Configuring UFW firewall..."
 ufw allow OpenSSH
 ufw allow "Nginx Full"
 ufw --force enable
 
-# ── 10. SSH deploy key for GitHub Actions ───────────────────────────────────
+# ── 9. SSH deploy key for GitHub Actions ────────────────────────────────────
 DEPLOY_KEY="$APP_DIR/.ssh/deploy_key"
 if [[ ! -f "$DEPLOY_KEY" ]]; then
   echo "▶ Generating deploy SSH key..."
