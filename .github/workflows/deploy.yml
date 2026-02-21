@@ -38,8 +38,8 @@ jobs:
             git reset --hard origin/main
 
             echo "▶ Installing dependencies..."
-            source venv/bin/activate
-            pip install -r requirements.txt --quiet --no-cache-dir
+            source venv/bin/activate || (echo "❌ venv not found — run setup-droplet.sh first" && exit 1)
+            pip install -r requirements.txt --no-cache-dir
 
             if [ "${{ github.event.inputs.skip_migrations || 'false' }}" != "true" ]; then
               echo "▶ Running Alembic migrations..."
