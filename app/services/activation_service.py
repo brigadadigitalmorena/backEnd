@@ -645,11 +645,11 @@ class ActivationCodeService:
                 error="Invalid activation code"
             )
 
-        # Update attempt tracking
-        matching_code.activation_attempts += 1
-        matching_code.last_attempt_at = datetime.now()
-        matching_code.last_attempt_ip = ip_address
-        self.db.commit()
+        # NOTE: do NOT increment activation_attempts for validate — that counter
+        # is only incremented on complete_activation failures (identifier mismatch)
+        # so that brute-forcing emails against a stolen code is rate-limited.
+        # Incrementing here would lock out a legitimate user who navigates back
+        # and re-validates the same code more than 5 times.
 
         # Check if expired
         if matching_code.is_expired:
@@ -738,6 +738,11 @@ class ActivationCodeService:
 
         # Verify identifier matches
         if whitelist.identifier.lower() != data.identifier.lower():
+            # Increment attempts to rate-limit brute-force of emails against a stolen code
+            matching_code.activation_attempts += 1
+            matching_code.last_attempt_at = datetime.now()
+            matching_code.last_attempt_ip = ip_address
+
             audit_log = ActivationAuditLog(
                 event_type="activation_failed",
                 activation_code_id=matching_code.id,
