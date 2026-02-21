@@ -607,92 +607,101 @@ class ActivationCodeService:
     ) -> ValidateCodeResponse:
         """
         Validate activation code (public endpoint).
-        Queries ALL non-used codes (no attempt/expiry filter) so we can return
-        specific, actionable error messages (expired vs locked vs not-found).
-        The attempt filter is enforced in complete_activation for security.
+
+        Two-phase approach for performance + good error messages:
+          Phase 1: bcrypt-check only ACTIVE candidates (not used, not expired,
+                   not revoked, attempts < 5).  Happy path resolves here in ms.
+          Phase 2: if no match, SQL-only search (no bcrypt) to detect whether
+                   the code exists but is expired or locked, so we can return a
+                   specific, actionable error message.
         """
-        # Scan all non-used codes — do NOT pre-filter by expiry/attempts here
-        # so we can return a specific reason if the code is found but unusable.
-        codes = self.db.query(ActivationCode).options(
+        now = datetime.now()
+
+        # ── Phase 1: active candidates only ──────────────────────────────────
+        active_codes = self.db.query(ActivationCode).options(
             joinedload(ActivationCode.whitelist_entry),
             joinedload(ActivationCode.whitelist_entry, UserWhitelist.assigned_supervisor)
         ).filter(
             ActivationCode.is_used == False,
+            ActivationCode.expires_at > now,
+            ActivationCode.activation_attempts < 5,
         ).all()
 
-        # Check each code hash (bcrypt comparison)
         matching_code = None
-        for code in codes:
+        for code in active_codes:
             if self.verify_activation_code(data.code, code.code_hash):
                 matching_code = code
                 break
 
-        # Determine failure reason for audit log
-        failure_reason = None
-        if not matching_code:
-            failure_reason = "invalid_code"
-        elif matching_code.is_expired:
-            failure_reason = "expired_code"
-        elif matching_code.is_locked:
-            failure_reason = "locked_code"
+        if matching_code:
+            # Log successful validation
+            audit_log = ActivationAuditLog(
+                event_type="code_validation_attempt",
+                activation_code_id=matching_code.id,
+                whitelist_id=matching_code.whitelist_id,
+                ip_address=ip_address,
+                success=True,
+                failure_reason=None
+            )
+            self.db.add(audit_log)
+            self.db.commit()
 
-        # Log validation attempt
+            whitelist = matching_code.whitelist_entry
+            remaining_hours = (matching_code.expires_at - now).total_seconds() / 3600
+            return ValidateCodeResponse(
+                valid=True,
+                whitelist_entry={
+                    "full_name": whitelist.full_name,
+                    "assigned_role": whitelist.assigned_role,
+                    "identifier_type": whitelist.identifier_type,
+                    "supervisor_name": whitelist.assigned_supervisor.full_name if whitelist.assigned_supervisor else None
+                },
+                expires_at=matching_code.expires_at,
+                remaining_hours=round(remaining_hours, 1),
+                activation_requirements=ActivationRequirements(
+                    must_provide_identifier=True,
+                    must_create_strong_password=True,
+                    password_min_length=8,
+                    must_agree_to_terms=True
+                )
+            )
+
+        # ── Phase 2: SQL-only — no bcrypt, just check state ──────────────────
+        # Load expired/locked candidates (not used, not revoked) and bcrypt-check
+        # them to give a specific reason without scanning the entire table again.
+        # Limit to 50 to cap response time for invalid/brute-force attempts.
+        problem_codes = self.db.query(ActivationCode).filter(
+            ActivationCode.is_used == False,
+            ActivationCode.activation_attempts < 999,  # exclude revoked
+            or_(
+                ActivationCode.expires_at <= now,                                      # expired
+                ActivationCode.activation_attempts >= 5,                               # locked
+            )
+        ).order_by(ActivationCode.generated_at.desc()).limit(50).all()
+
+        found_state = None
+        for code in problem_codes:
+            if self.verify_activation_code(data.code, code.code_hash):
+                found_state = "expired" if code.is_expired else "locked"
+                break
+
+        failure_reason = found_state or "invalid_code"
         audit_log = ActivationAuditLog(
             event_type="code_validation_attempt",
-            activation_code_id=matching_code.id if matching_code else None,
-            whitelist_id=matching_code.whitelist_id if matching_code else None,
+            activation_code_id=None,
+            whitelist_id=None,
             ip_address=ip_address,
-            success=(matching_code is not None and failure_reason is None),
+            success=False,
             failure_reason=failure_reason
         )
         self.db.add(audit_log)
         self.db.commit()
 
-        if not matching_code:
-            return ValidateCodeResponse(
-                valid=False,
-                error="Activation code not found"
-            )
-
-        # NOTE: validate never increments activation_attempts — that counter is
-        # only incremented on identifier mismatch in complete_activation to
-        # rate-limit brute-forcing email addresses against a stolen code.
-
-        # Return specific messages so the user (and admin) know what to do next.
-        if matching_code.is_expired:
-            return ValidateCodeResponse(
-                valid=False,
-                error="Activation code expired"
-            )
-
-        if matching_code.is_locked:
-            return ValidateCodeResponse(
-                valid=False,
-                error="Activation code locked"
-            )
-
-        # Code is valid - return whitelist info
-        whitelist = matching_code.whitelist_entry
-        now = datetime.now()
-        remaining_hours = (matching_code.expires_at - now).total_seconds() / 3600
-
-        return ValidateCodeResponse(
-            valid=True,
-            whitelist_entry={
-                "full_name": whitelist.full_name,
-                "assigned_role": whitelist.assigned_role,
-                "identifier_type": whitelist.identifier_type,
-                "supervisor_name": whitelist.assigned_supervisor.full_name if whitelist.assigned_supervisor else None
-            },
-            expires_at=matching_code.expires_at,
-            remaining_hours=round(remaining_hours, 1),
-            activation_requirements=ActivationRequirements(
-                must_provide_identifier=True,
-                must_create_strong_password=True,
-                password_min_length=8,
-                must_agree_to_terms=True
-            )
-        )
+        if found_state == "expired":
+            return ValidateCodeResponse(valid=False, error="Activation code expired")
+        if found_state == "locked":
+            return ValidateCodeResponse(valid=False, error="Activation code locked")
+        return ValidateCodeResponse(valid=False, error="Activation code not found")
 
     async def complete_activation(
         self,
