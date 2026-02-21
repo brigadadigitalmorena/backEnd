@@ -13,17 +13,13 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────────────────────
 APP_USER="polo"
 APP_DIR="/opt/brigada-backend"
-REPO_URL="${REPO_URL:-}"           # set via env or prompted below
+REPO_URL="${REPO_URL:-https://github.com/brigadadigitalmorena/backEnd.git}"
 PYTHON_VERSION="3.12"
 SERVICE_NAME="brigada-backend"
 # ─────────────────────────────────────────────────────────────────────────────
 
 if [[ $EUID -ne 0 ]]; then
   echo "❌  Run as root (sudo bash $0)" && exit 1
-fi
-
-if [[ -z "$REPO_URL" ]]; then
-  read -rp "GitHub repo SSH URL (e.g. git@github.com:org/brigadaBackEnd.git): " REPO_URL
 fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
