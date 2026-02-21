@@ -147,7 +147,7 @@ def get_my_team_responses(
     db: Annotated[Session, Depends(get_db)],
     current_user: AdminOrEncargado,
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100),
+    limit: int = Query(100, ge=1, le=500),
 ):
     """
     Get survey responses submitted by team members assigned by the current encargado.
