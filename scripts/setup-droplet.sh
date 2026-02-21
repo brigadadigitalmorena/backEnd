@@ -14,7 +14,7 @@ set -euo pipefail
 APP_USER="polo"
 APP_DIR="/opt/brigada-backend"
 REPO_URL="${REPO_URL:-}"           # set via env or prompted below
-PYTHON_VERSION="3.11"
+PYTHON_VERSION="3.12"
 SERVICE_NAME="brigada-backend"
 # ─────────────────────────────────────────────────────────────────────────────
 
