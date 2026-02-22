@@ -184,6 +184,11 @@ def get_assigned_surveys(
         if latest_version is None:
             continue  # Skip surveys without published versions
 
+        # Skip inactive or soft-deleted surveys
+        survey = assignment.survey
+        if not survey.is_active or survey.deleted_at is not None:
+            continue
+
         result.append(AssignedSurveyResponse(
             assignment_id=assignment.id,
             survey_id=assignment.survey.id,
