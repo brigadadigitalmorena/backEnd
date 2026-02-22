@@ -81,6 +81,24 @@ def get_user(
     return service.get_user(user_id)
 
 
+@router.patch("/me", response_model=UserResponse)
+def update_own_profile(
+    user_data: UserUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: AnyUser
+):
+    """
+    Update own profile (any authenticated user).
+
+    Users cannot change their own role or is_active status.
+    """
+    # Remove sensitive fields that users shouldn't change themselves
+    update_data = user_data.model_dump(exclude_unset=True, exclude={'is_active', 'role'})
+
+    service = UserService(db)
+    return service.update_user(current_user.id, UserUpdate(**update_data))
+
+
 @router.patch("/{user_id}", response_model=UserResponse)
 def update_user(
     user_id: int,
@@ -128,24 +146,6 @@ def update_user(
         db.commit()
 
     return updated
-
-
-@router.patch("/me", response_model=UserResponse)
-def update_own_profile(
-    user_data: UserUpdate,
-    db: Annotated[Session, Depends(get_db)],
-    current_user: AnyUser
-):
-    """
-    Update own profile (any authenticated user).
-
-    Users cannot change their own role or is_active status.
-    """
-    # Remove sensitive fields that users shouldn't change themselves
-    update_data = user_data.model_dump(exclude_unset=True, exclude={'is_active', 'role'})
-
-    service = UserService(db)
-    return service.update_user(current_user.id, UserUpdate(**update_data))
 
 
 @router.post("/me/avatar", response_model=UserResponse)
