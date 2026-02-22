@@ -6,7 +6,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.limiter import limiter
-from app.api import auth, users, admin_surveys, assignments, mobile, admin_responses, admin_activation, public_activation, issue_reporting, notifications, admin_stats
+from app.api import auth, users, admin_surveys, assignments, mobile, admin_responses, admin_activation, public_activation, issue_reporting, notifications, admin_stats, ocr
 
 # Create FastAPI app
 app = FastAPI(
@@ -42,6 +42,7 @@ app.include_router(public_activation.router)  # Public activation endpoints
 app.include_router(issue_reporting.router)  # Issue reporting emails
 app.include_router(notifications.router)   # Admin notifications
 app.include_router(admin_stats.router)     # Admin dashboard stats
+app.include_router(ocr.router)             # OCR utilities (CURP validation via RENAPO)
 
 
 @app.get("/")
