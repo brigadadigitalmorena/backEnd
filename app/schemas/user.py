@@ -27,6 +27,7 @@ class UserLoginResponse(BaseModel):
     apellido: str
     rol: str
     telefono: Optional[str] = None
+    avatar_url: Optional[str] = None
     created_at: datetime
     activo: bool
 

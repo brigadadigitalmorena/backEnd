@@ -82,6 +82,7 @@ class AuthService:
                 apellido=apellido,
                 rol=user.role.value,
                 telefono=user.phone,
+                avatar_url=user.avatar_url,
                 created_at=user.created_at,
                 activo=user.is_active
             )
