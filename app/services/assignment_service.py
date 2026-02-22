@@ -37,13 +37,13 @@ class AssignmentService:
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                detail="Usuario no encontrado"
             )
 
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot assign survey to an inactive user"
+                detail="No se puede asignar una encuesta a un usuario inactivo"
             )
 
         # Validate survey
@@ -51,13 +51,13 @@ class AssignmentService:
         if not survey:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Survey not found"
+                detail="Encuesta no encontrada"
             )
 
         if not survey.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot assign inactive survey"
+                detail="No se puede asignar una encuesta inactiva. Actívala primero desde la sección de encuestas."
             )
 
         # Prevent duplicate: one active assignment per user+survey is enough.
@@ -65,7 +65,7 @@ class AssignmentService:
         if self.assignment_repo.exists(assignment_data.user_id, assignment_data.survey_id):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="User already has an active assignment for this survey"
+                detail="Este usuario ya tiene asignada esta encuesta"
             )
 
         assignment = self.assignment_repo.create(
