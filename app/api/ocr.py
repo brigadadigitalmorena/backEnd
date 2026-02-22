@@ -87,9 +87,9 @@ async def validate_curp(
         # No tiene sentido consultar RENAPO con un CURP mal formado
         return result
 
-    # 2. Consultar RENAPO
+    # 2. Consultar RENAPO (timeout corto — el servicio es inestable)
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=4.0) as client:
             resp = await client.get(f"{RENAPO_BASE}/{curp}")
 
         if resp.status_code == 200:

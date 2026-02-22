@@ -67,6 +67,7 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
     is_active: Optional[bool] = None
+    role: Optional[UserRole] = None
 
 
 class UserResponse(UserBase):
