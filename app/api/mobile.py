@@ -2,7 +2,7 @@
 from typing import Annotated, List, Optional, Tuple
 from fastapi import APIRouter, Depends, Query, File, UploadFile, HTTPException, Request, status, Header
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 import cloudinary
 import cloudinary.utils
@@ -383,7 +383,7 @@ def upload_document(
     
     # Generate unique document ID
     document_id = f"doc_{uuid.uuid4().hex[:12]}"
-    expires_at = datetime.utcnow() + timedelta(minutes=30)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=30)
 
     if not settings.cloudinary_configured:
         raise HTTPException(
@@ -411,7 +411,7 @@ def upload_document(
     #   brigada/surveys/7/2026/02/**      → monthly slice
     #   brigada/surveys/7/2026/02/photo/** → photos that month
     #
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
     year_str = now_utc.strftime("%Y")
     month_str = now_utc.strftime("%m")
 

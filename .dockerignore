@@ -1,0 +1,51 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov/
+.tox
+
+# Docker
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile
+
+# Documentation
+*.md
+docs/
+LICENSE
+
+# Environment files (secrets should NOT be baked into image)
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Alembic cache
+alembic/versions/__pycache__

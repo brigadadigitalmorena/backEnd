@@ -1,6 +1,6 @@
 """Survey response service."""
 from typing import List, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -236,6 +236,6 @@ class ResponseService:
             failed=len(failed_ids),
             duplicates=duplicates,
             results=results,
-            server_time=datetime.utcnow(),
+            server_time=datetime.now(timezone.utc),
             next_retry_hint=60 if len(failed_ids) == 0 else 30,
         )

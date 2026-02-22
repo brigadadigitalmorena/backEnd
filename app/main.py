@@ -168,5 +168,23 @@ def root():
 
 @app.get("/health")
 def health():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+    """Health check endpoint with real DB connectivity test."""
+    from app.core.database import SessionLocal
+    from sqlalchemy import text
+
+    result = {"status": "healthy", "database": "disconnected"}
+    http_status = 200
+
+    try:
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            result["database"] = "connected"
+        finally:
+            db.close()
+    except Exception as exc:
+        result["status"] = "degraded"
+        result["database"] = f"error: {str(exc)[:120]}"
+        http_status = 503
+
+    return JSONResponse(content=result, status_code=http_status)
