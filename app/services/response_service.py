@@ -1,5 +1,6 @@
 """Survey response service."""
 from typing import List, Dict
+from datetime import datetime
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -13,6 +14,7 @@ from app.schemas.response import (
     ResponseValidationResult,
     ValidationStatus
 )
+from app.core.ops_metrics import observe_batch_metrics
 
 
 class ResponseService:
@@ -142,6 +144,30 @@ class ResponseService:
         synced = 0
         failed_ids: List[str] = []
 
+        def _contains_low_ocr_confidence(value: object) -> bool:
+            if isinstance(value, dict):
+                conf = value.get("confidence")
+                if isinstance(conf, (int, float)) and conf < 0.7:
+                    return True
+
+                field_conf = value.get("fieldConfidence")
+                if isinstance(field_conf, dict):
+                    for v in field_conf.values():
+                        if isinstance(v, (int, float)) and v < 0.7:
+                            return True
+
+                for v in value.values():
+                    if _contains_low_ocr_confidence(v):
+                        return True
+            elif isinstance(value, list):
+                return any(_contains_low_ocr_confidence(v) for v in value)
+            return False
+
+        low_ocr_count = 0
+        for response_data in responses:
+            if any(_contains_low_ocr_confidence(a.answer_value) for a in response_data.answers):
+                low_ocr_count += 1
+
         for i, response_data in enumerate(responses):
             sp_name = f"sp_batch_{i}"
             try:
@@ -198,10 +224,18 @@ class ResponseService:
             1 for r in results if r.status == ValidationStatus.DUPLICATE
         )
 
+        observe_batch_metrics(
+            total=len(responses),
+            duplicates=duplicates,
+            low_ocr=low_ocr_count,
+        )
+
         return BatchResponseResult(
             total=len(responses),
             successful=synced,
             failed=len(failed_ids),
             duplicates=duplicates,
             results=results,
+            server_time=datetime.utcnow(),
+            next_retry_hint=60 if len(failed_ids) == 0 else 30,
         )

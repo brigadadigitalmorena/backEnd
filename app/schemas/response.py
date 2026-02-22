@@ -82,6 +82,11 @@ class BatchResponseResult(BaseModel):
     failed: int
     duplicates: int
     results: List[ResponseValidationResult]
+    server_time: datetime
+    next_retry_hint: int = Field(
+        default=60,
+        description="Suggested seconds before next retry for failed items",
+    )
 
 
 class DocumentMetadata(BaseModel):

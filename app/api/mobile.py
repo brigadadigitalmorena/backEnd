@@ -1,6 +1,6 @@
 """Mobile app routers for offline-first survey application."""
-from typing import Annotated, List
-from fastapi import APIRouter, Depends, Query, File, UploadFile, HTTPException, Request, status
+from typing import Annotated, List, Optional, Tuple
+from fastapi import APIRouter, Depends, Query, File, UploadFile, HTTPException, Request, status, Header
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import uuid
@@ -31,7 +31,48 @@ from app.services.auth_service import AuthService
 from app.core.config import settings
 from pydantic import BaseModel as _BaseModel, EmailStr
 
-router = APIRouter(prefix="/mobile", tags=["Mobile App - Offline First"])
+CURRENT_MOBILE_API_VERSION = "2026.1"
+MIN_SUPPORTED_MOBILE_API_VERSION = "2025.12"
+
+
+def _parse_mobile_version(raw: str) -> Tuple[int, int]:
+    try:
+        major, minor = raw.strip().split(".")
+        return int(major), int(minor)
+    except Exception:
+        return 0, 0
+
+
+def require_mobile_api_version(
+    x_mobile_api_version: Annotated[Optional[str], Header(alias="X-Mobile-Api-Version")] = None,
+):
+    """Optional contract version guard for legacy mobile apps.
+
+    If the client sends X-Mobile-Api-Version and it is below minimum,
+    return 426 so old apps can force-update safely.
+    """
+    if not x_mobile_api_version:
+        return
+
+    if _parse_mobile_version(x_mobile_api_version) < _parse_mobile_version(MIN_SUPPORTED_MOBILE_API_VERSION):
+        raise HTTPException(
+            status_code=status.HTTP_426_UPGRADE_REQUIRED,
+            detail={
+                "code": "mobile_api_version_unsupported",
+                "message": (
+                    f"Mobile API version {x_mobile_api_version} is no longer supported. "
+                    f"Minimum supported version is {MIN_SUPPORTED_MOBILE_API_VERSION}."
+                ),
+                "retriable": False,
+            },
+        )
+
+
+router = APIRouter(
+    prefix="/mobile",
+    tags=["Mobile App - Offline First"],
+    dependencies=[Depends(require_mobile_api_version)],
+)
 
 
 class MobileLoginRequest(_BaseModel):
@@ -40,6 +81,15 @@ class MobileLoginRequest(_BaseModel):
     password: str
     device_id: str
     app_version: str
+
+
+@router.get("/contract")
+def mobile_contract_info():
+    """Expose current contract version metadata for safe client upgrades."""
+    return {
+        "api_version": CURRENT_MOBILE_API_VERSION,
+        "min_supported_api_version": MIN_SUPPORTED_MOBILE_API_VERSION,
+    }
 
 
 @router.post("/login", response_model=LoginResponse)

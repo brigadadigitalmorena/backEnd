@@ -10,6 +10,7 @@ from app.models.user import User, UserRole
 from app.models.survey import Survey
 from app.models.assignment import Assignment, AssignmentStatus
 from app.models.response import SurveyResponse
+from app.core.ops_metrics import get_mobile_ops_metrics
 
 router = APIRouter(prefix="/admin/stats", tags=["admin-stats"])
 
@@ -77,3 +78,17 @@ def get_admin_stats(
         "responseRate": response_rate,
         "totalAssignments": total_assignments,
     }
+
+
+@router.get("/ops-mobile")
+def get_mobile_ops_metrics_admin(
+    current_user: AdminUser,
+):
+    """Operational metrics for mobile API reliability/quality monitoring.
+
+    Includes:
+    - p95 latency per /mobile endpoint
+    - duplicate rate in batch sync
+    - low OCR-confidence rate in batch sync
+    """
+    return get_mobile_ops_metrics()
