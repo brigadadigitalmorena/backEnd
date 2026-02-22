@@ -93,7 +93,7 @@ def update_own_profile(
     Users cannot change their own role or is_active status.
     """
     # Remove sensitive fields that users shouldn't change themselves
-    update_data = user_data.model_dump(exclude_unset=True, exclude={'is_active', 'role'})
+    update_data = user_data.model_dump(exclude_unset=True, exclude={'is_active', 'role', 'email'})
 
     service = UserService(db)
     return service.update_user(current_user.id, UserUpdate(**update_data))

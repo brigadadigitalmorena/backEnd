@@ -30,9 +30,6 @@ class AuthService:
         if not user:
             return None
         
-        if not user.is_active:
-            return None
-        
         if not verify_password(password, user.hashed_password):
             return None
         
@@ -45,6 +42,16 @@ class AuthService:
         Raises:
             HTTPException: If authentication fails
         """
+        # First check if user exists
+        db_user = self.user_repo.get_by_email(email)
+        
+        # Check if account is deactivated (before password check)
+        if db_user and not db_user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tu cuenta está desactivada. Contacta al administrador.",
+            )
+        
         user = self.authenticate_user(email, password)
         
         if not user:

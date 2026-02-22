@@ -109,7 +109,7 @@ async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded)
         content=_error_payload(
             request,
             code="rate_limited",
-            message="Too many requests",
+            message="Demasiadas solicitudes. Intenta de nuevo en unos minutos.",
             retriable=True,
         ),
         headers={"X-Request-Id": getattr(request.state, "request_id", "unknown")},
