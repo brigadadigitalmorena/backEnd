@@ -82,7 +82,12 @@ class SurveyVersion(Base):
     
     # Relationships
     survey = relationship("Survey", back_populates="versions")
-    questions = relationship("Question", back_populates="version", cascade="all, delete-orphan")
+    questions = relationship(
+        "Question",
+        back_populates="version",
+        cascade="all, delete-orphan",
+        order_by="Question.order",
+    )
     responses = relationship("SurveyResponse", back_populates="version")
     
     def __repr__(self):
