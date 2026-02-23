@@ -111,6 +111,10 @@ class ResponseService:
                           limit: int = 100) -> List[SurveyResponse]:
         """Get all responses submitted by a user."""
         return self.response_repo.get_by_user(user_id, skip=skip, limit=limit)
+
+    def count_user_responses(self, user_id: int) -> int:
+        """Count total responses submitted by a user."""
+        return self.response_repo.count_by_user(user_id)
     
     def get_survey_responses(self, survey_id: int, skip: int = 0,
                             limit: int = 100) -> List[SurveyResponse]:

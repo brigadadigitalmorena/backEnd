@@ -1,8 +1,19 @@
 """Survey response schemas."""
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List, Dict, Any, Literal
+from typing import Optional, List, Dict, Any, Literal, Generic, TypeVar
 from datetime import datetime
 from enum import Enum
+
+T = TypeVar("T")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Paginated list wrapper returned by list endpoints."""
+    items: List[T]
+    total: int
+    skip: int
+    limit: int
+    has_more: bool
 
 
 class QuestionAnswerCreate(BaseModel):

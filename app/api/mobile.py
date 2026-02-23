@@ -20,6 +20,7 @@ from app.schemas.response import (
     SurveyResponseDetail,
     BatchResponseCreate,
     BatchResponseResult,
+    PaginatedResponse,
     DocumentUploadRequest,
     DocumentUploadResponse,
     DocumentConfirmRequest,
@@ -277,15 +278,15 @@ def submit_batch_responses(
     return service.submit_batch_responses(batch_data.responses, current_user.id)
 
 
-@router.get("/responses/me", response_model=List[SurveyResponseDetail])
+@router.get("/responses/me")
 def get_my_responses(
     db: Annotated[Session, Depends(get_db)],
     current_user: MobileUser,
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100)
+    limit: int = Query(20, ge=1, le=100)
 ):
     """
-    Get current user's submitted responses.
+    Get current user's submitted responses (paginated).
     
     **Use Case:**
     - View submission history
@@ -293,7 +294,15 @@ def get_my_responses(
     - Re-download responses for offline viewing
     """
     service = ResponseService(db)
-    return service.get_user_responses(current_user.id, skip=skip, limit=limit)
+    items = service.get_user_responses(current_user.id, skip=skip, limit=limit)
+    total = service.count_user_responses(current_user.id)
+    return {
+        "items": items,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "has_more": skip + limit < total,
+    }
 
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse, status_code=201)

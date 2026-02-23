@@ -147,33 +147,40 @@ def get_my_team_responses(
     db: Annotated[Session, Depends(get_db)],
     current_user: AdminOrEncargado,
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(20, ge=1, le=500),
 ):
     """
     Get survey responses submitted by team members assigned by the current encargado.
-    Returns a flat list ordered by most recent first.
+    Returns a paginated list ordered by most recent first.
     """
     from app.repositories.assignment_repository import AssignmentRepository
     from app.models.response import SurveyResponse
     from app.models.survey import SurveyVersion, Survey
     from app.models.user import User
     from sqlalchemy.orm import joinedload
+    from sqlalchemy import func
 
     repo = AssignmentRepository(db)
     assignments = repo.get_by_assigner(current_user.id, limit=200)
     user_ids = list({a.user_id for a in assignments})
 
     if not user_ids:
-        return []
+        return {"items": [], "total": 0, "skip": skip, "limit": limit, "has_more": False}
 
-    rows = (
+    base_filter = (
         db.query(SurveyResponse)
-        .options(
-            joinedload(SurveyResponse.version).joinedload(SurveyVersion.survey),
-        )
         .join(SurveyVersion, SurveyResponse.version_id == SurveyVersion.id)
         .join(Survey, SurveyVersion.survey_id == Survey.id)
         .filter(SurveyResponse.user_id.in_(user_ids))
+    )
+
+    total = base_filter.with_entities(func.count(SurveyResponse.id)).scalar()
+
+    rows = (
+        base_filter
+        .options(
+            joinedload(SurveyResponse.version).joinedload(SurveyVersion.survey),
+        )
         .order_by(SurveyResponse.completed_at.desc())
         .offset(skip)
         .limit(limit)
@@ -183,7 +190,7 @@ def get_my_team_responses(
     # Fetch user names in one query
     users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
 
-    return [
+    items = [
         {
             "id": r.id,
             "user_id": r.user_id,
@@ -198,6 +205,8 @@ def get_my_team_responses(
         }
         for r in rows
     ]
+
+    return {"items": items, "total": total, "skip": skip, "limit": limit, "has_more": skip + limit < total}
 
 
 @router.patch("/{assignment_id}", response_model=AssignmentResponse)
