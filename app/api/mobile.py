@@ -22,11 +22,14 @@ from app.schemas.response import (
     BatchResponseResult,
     DocumentUploadRequest,
     DocumentUploadResponse,
+    DocumentConfirmRequest,
+    DocumentConfirmResponse,
     SyncStatus
 )
+from app.models.document import Document
 from app.schemas.notification import NotificationResponse, NotificationListResponse, UnreadCountResponse
 from app.schemas.user import LoginResponse, UserResponse
-from app.api.dependencies import BrigadistaUser, get_current_user
+from app.api.dependencies import BrigadistaUser, MobileUser, get_current_user
 from app.services.auth_service import AuthService
 from app.core.config import settings
 from pydantic import BaseModel as _BaseModel, EmailStr
@@ -122,7 +125,7 @@ def mobile_login(
 
 
 @router.get("/me", response_model=UserResponse)
-def get_my_profile(current_user: BrigadistaUser):
+def get_my_profile(current_user: MobileUser):
     """
     Get the authenticated user's profile.
 
@@ -134,7 +137,7 @@ def get_my_profile(current_user: BrigadistaUser):
 @router.get("/surveys", response_model=List[AssignedSurveyResponse])
 def get_assigned_surveys(
     db: Annotated[Session, Depends(get_db)],
-    current_user: BrigadistaUser,
+    current_user: MobileUser,
     status_filter: str = Query(None, description="Filter by assignment status: active, inactive"),
 ):
     """
@@ -207,7 +210,7 @@ def get_assigned_surveys(
 def get_latest_survey_version(
     survey_id: int,
     db: Annotated[Session, Depends(get_db)],
-    current_user: BrigadistaUser
+    current_user: MobileUser
 ):
     """
     Get latest published survey version for mobile app.
@@ -224,7 +227,7 @@ def get_latest_survey_version(
 def submit_batch_responses(
     batch_data: BatchResponseCreate,
     db: Annotated[Session, Depends(get_db)],
-    current_user: BrigadistaUser
+    current_user: MobileUser
 ):
     """
     Submit multiple survey responses in batch (offline sync).
@@ -277,7 +280,7 @@ def submit_batch_responses(
 @router.get("/responses/me", response_model=List[SurveyResponseDetail])
 def get_my_responses(
     db: Annotated[Session, Depends(get_db)],
-    current_user: BrigadistaUser,
+    current_user: MobileUser,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100)
 ):
@@ -297,7 +300,7 @@ def get_my_responses(
 def upload_document(
     request: DocumentUploadRequest,
     db: Annotated[Session, Depends(get_db)],
-    current_user: BrigadistaUser
+    current_user: MobileUser
 ):
     """
     Generate pre-signed URL for document upload (photos, signatures, scanned docs).
@@ -478,6 +481,23 @@ def upload_document(
         f"/{resource_type}/upload"
     )
 
+    # ── Persist document record (status = pending) ─────────────────────────
+    doc_record = Document(
+        document_id=document_id,
+        user_id=current_user.id,
+        response_client_id=request.client_id,
+        question_id=question_id,
+        file_name=request.file_name,
+        file_size=request.file_size,
+        mime_type=request.mime_type,
+        document_type=doc_type,
+        cloudinary_public_id=public_id,
+        ocr_confidence=ocr_confidence,
+        status="pending",
+    )
+    db.add(doc_record)
+    db.commit()
+
     return DocumentUploadResponse(
         document_id=document_id,
         upload_url=upload_url,
@@ -493,10 +513,84 @@ def upload_document(
     )
 
 
+@router.post("/documents/confirm", response_model=DocumentConfirmResponse)
+def confirm_document_upload(
+    body: DocumentConfirmRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: MobileUser,
+):
+    """
+    Confirm a file was successfully uploaded to Cloudinary.
+
+    Called by the mobile app **after** the direct Cloudinary upload succeeds.
+    Updates the document record and back-fills ``media_url`` on the
+    corresponding ``question_answers`` row (if the response already exists).
+    """
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.document_id == body.document_id,
+            Document.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found or not owned by you",
+        )
+
+    if doc.status == "uploaded":
+        # Idempotent — already confirmed
+        return DocumentConfirmResponse(
+            document_id=doc.document_id,
+            status="uploaded",
+            remote_url=doc.remote_url or body.remote_url,
+            answers_updated=0,
+        )
+
+    doc.status = "uploaded"
+    doc.remote_url = body.remote_url
+    doc.cloudinary_public_id = body.cloudinary_public_id
+    doc.confirmed_at = datetime.now(timezone.utc)
+
+    # Back-fill media_url on the question_answers row for this document
+    answers_updated = 0
+    if doc.question_id and doc.response_client_id:
+        from app.models.response import SurveyResponse, QuestionAnswer
+
+        response = (
+            db.query(SurveyResponse)
+            .filter(SurveyResponse.client_id == doc.response_client_id)
+            .first()
+        )
+        if response:
+            answer = (
+                db.query(QuestionAnswer)
+                .filter(
+                    QuestionAnswer.response_id == response.id,
+                    QuestionAnswer.question_id == doc.question_id,
+                )
+                .first()
+            )
+            if answer:
+                answer.media_url = body.remote_url
+                answers_updated = 1
+
+    db.commit()
+
+    return DocumentConfirmResponse(
+        document_id=doc.document_id,
+        status="uploaded",
+        remote_url=body.remote_url,
+        answers_updated=answers_updated,
+    )
+
+
 @router.get("/sync-status", response_model=SyncStatus)
 def get_sync_status(
     db: Annotated[Session, Depends(get_db)],
-    current_user: BrigadistaUser
+    current_user: MobileUser
 ):
     """
     Get sync status for mobile app.
@@ -538,31 +632,42 @@ def get_sync_status(
     """
     response_service = ResponseService(db)
     assignment_repo = AssignmentRepository(db)
-    
-    # Get synced responses count
+
+    # ── Synced responses count ────────────────────────────────────────────
     synced_responses = response_service.get_sync_status(current_user.id)["synced_responses"]
-    
-    # Get assigned surveys count
+
+    # ── Assigned surveys count ────────────────────────────────────────────
     assignments = assignment_repo.get_by_user(current_user.id)
     assigned_surveys_count = len(assignments)
-    
-    # TODO: Get last sync timestamp from device tracking table
-    # last_sync = DeviceRepository.get_last_sync(current_user.id)
-    
-    # TODO: Check for survey version updates
-    # available_updates = []
-    # for assignment in assignments:
-    #     if has_newer_version(assignment.survey_id, device_last_downloaded_version):
-    #         available_updates.append(assignment.survey_id)
-    
+
+    # ── Pending documents (uploads not yet confirmed) ─────────────────────
+    pending_documents = (
+        db.query(Document)
+        .filter(
+            Document.user_id == current_user.id,
+            Document.status == "pending",
+        )
+        .count()
+    )
+
+    # ── Last sync timestamp (most recent synced_at from user's responses) ─
+    from sqlalchemy import func as sqlfunc
+    from app.models.response import SurveyResponse
+
+    last_sync_row = (
+        db.query(sqlfunc.max(SurveyResponse.synced_at))
+        .filter(SurveyResponse.user_id == current_user.id)
+        .scalar()
+    )
+
     return SyncStatus(
         user_id=current_user.id,
-        pending_responses=0,  # Client-side tracking needed
+        pending_responses=0,  # Client-side only — server can't know what's queued on the device
         synced_responses=synced_responses,
-        pending_documents=0,  # Requires document tracking table
-        last_sync=None,  # Requires device tracking table
+        pending_documents=pending_documents,
+        last_sync=last_sync_row,
         assigned_surveys=assigned_surveys_count,
-        available_updates=[]  # Requires version tracking logic
+        available_updates=[],  # Requires client→server version negotiation (future)
     )
 
 
@@ -571,7 +676,7 @@ def get_sync_status(
 @router.get("/notifications", response_model=NotificationListResponse)
 def get_my_notifications(
     db: Annotated[Session, Depends(get_db)],
-    current_user: BrigadistaUser,
+    current_user: MobileUser,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     unread_only: bool = Query(False),
@@ -593,7 +698,7 @@ def get_my_notifications(
 @router.get("/notifications/unread-count", response_model=UnreadCountResponse)
 def get_my_notification_unread_count(
     db: Annotated[Session, Depends(get_db)],
-    current_user: BrigadistaUser,
+    current_user: MobileUser,
 ):
     """Get count of unread notifications for the current user (for badge display)."""
     service = NotificationService(db)
@@ -604,7 +709,7 @@ def get_my_notification_unread_count(
 def mark_my_notification_read(
     notification_id: int,
     db: Annotated[Session, Depends(get_db)],
-    current_user: BrigadistaUser,
+    current_user: MobileUser,
 ):
     """Mark a specific notification as read (only if owned by current user)."""
     from app.models.notification import Notification
@@ -620,7 +725,7 @@ def mark_my_notification_read(
 @router.patch("/notifications/read-all", response_model=dict)
 def mark_all_my_notifications_read(
     db: Annotated[Session, Depends(get_db)],
-    current_user: BrigadistaUser,
+    current_user: MobileUser,
 ):
     """Mark all of the current user's notifications as read."""
     from app.models.notification import Notification

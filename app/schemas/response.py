@@ -131,3 +131,23 @@ class SyncStatus(BaseModel):
     last_sync: Optional[datetime] = None
     assigned_surveys: int
     available_updates: List[int] = Field(default_factory=list)  # Survey IDs with new versions
+
+
+# ── Document confirmation ─────────────────────────────────────────────────────
+
+class DocumentConfirmRequest(BaseModel):
+    """Confirm that a file was successfully uploaded to Cloudinary."""
+    document_id: str = Field(..., description="The document_id returned by /documents/upload")
+    remote_url: str = Field(..., description="The secure_url returned by Cloudinary")
+    cloudinary_public_id: str = Field(..., description="The public_id returned by Cloudinary")
+
+
+class DocumentConfirmResponse(BaseModel):
+    """Confirmation result."""
+    document_id: str
+    status: str
+    remote_url: str
+    answers_updated: int = Field(
+        default=0,
+        description="Number of question_answers whose media_url was back-filled",
+    )

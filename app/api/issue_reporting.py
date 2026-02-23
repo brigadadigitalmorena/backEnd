@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 
 resend.api_key = settings.RESEND_API_KEY
 
-ISSUE_REPORT_RECIPIENT = "brigadadigitalmorena@gmail.com"
 
 router = APIRouter(prefix="/api/email", tags=["email"])
 
@@ -67,7 +66,7 @@ async def send_issue_report(
         response = resend.Emails.send(
             {
                 "from": settings.FROM_EMAIL,
-                "to": ISSUE_REPORT_RECIPIENT,
+                "to": settings.ISSUE_REPORT_RECIPIENT,
                 "subject": f"[Brigada] {safe_subject}",
                 "html": email_html,
                 "reply_to": current_user.email,

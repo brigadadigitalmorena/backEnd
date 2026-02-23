@@ -21,9 +21,12 @@ RENAPO endpoint:
 
 import re
 import httpx
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Request
 from pydantic import BaseModel
 from typing import Optional
+
+from app.api.dependencies import AnyUser
+from app.core.limiter import limiter
 
 
 router = APIRouter(prefix="/ocr", tags=["ocr"])
@@ -64,7 +67,10 @@ class CurpValidationResult(BaseModel):
         "renapo_reachable=false y solo el resultado del regex local."
     ),
 )
+@limiter.limit("10/minute")
 async def validate_curp(
+    request: Request,
+    current_user: AnyUser,
     curp: str = Path(
         ...,
         min_length=18,

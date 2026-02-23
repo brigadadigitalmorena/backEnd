@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     FROM_EMAIL: str = "noreply@psicologopuebla.com"
     FROM_NAME: str = "Brigada"
+    ISSUE_REPORT_RECIPIENT: str = "brigadadigitalmorena@gmail.com"
     
     # Neon API (for quota service)
     NEON_API_KEY: str = ""
