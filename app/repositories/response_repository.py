@@ -44,9 +44,11 @@ class ResponseRepository:
             .first()
     
     def get_by_user(self, user_id: int, skip: int = 0, limit: int = 100) -> List[SurveyResponse]:
-        """Get all responses by user."""
+        """Get all responses by user (with answers eagerly loaded)."""
         return self.db.query(SurveyResponse)\
+            .options(joinedload(SurveyResponse.answers))\
             .filter(SurveyResponse.user_id == user_id)\
+            .order_by(SurveyResponse.completed_at.desc())\
             .offset(skip).limit(limit)\
             .all()
     

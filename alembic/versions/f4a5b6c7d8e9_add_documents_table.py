@@ -1,7 +1,7 @@
 """add documents table
 
-Revision ID: a1b2c3d4e5f6
-Revises: 5acd0fab379c
+Revision ID: f4a5b6c7d8e9
+Revises: d1e2f3a4b5c6
 Create Date: 2026-02-23
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = "a1b2c3d4e5f6"
-down_revision = "5acd0fab379c"
+revision = "f4a5b6c7d8e9"
+down_revision = "d1e2f3a4b5c6"
 branch_labels = None
 depends_on = None
 
